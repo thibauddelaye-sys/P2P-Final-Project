@@ -104,7 +104,9 @@
         </div>
         <div class="panel">
           <h3>Inbox — incoming by email</h3>
-          <div class="note" style="margin-bottom:8px">Simulated: invoices suppliers email in. Click ingest to run the same reading flow.</div>
+          <div class="note" style="margin-bottom:8px">Real mailbox: suppliers email invoices in; click below to read new ones with the same flow.</div>
+          <button class="act" onclick="checkInbox()">Check inbox</button>
+          <div id="inbox-status" class="note" style="margin-top:8px"></div>
           <div id="inbox"></div>
         </div>
       </div>
@@ -236,6 +238,23 @@ function loadInbox(){
   $('#inbox').innerHTML=items.map(([v,s,t],i)=>`<div class="inbox-item"><div><b>${v}</b><br><span class="note">${s} · ${t}</span></div>
     <button class="ghost" onclick="sampleExtract()">Ingest</button></div>`).join('');
 }
+
+let INBOX_EMAILS=[];
+async function checkInbox(){
+  const st=$('#inbox-status'); st.innerHTML='<span class="spin"></span> Checking mailbox…';
+  try{
+    const r=await fetch('/api/email/poll',{method:'POST'});
+    if(r.status===503){st.innerHTML='<span class="tag warn">No mailbox connected</span> set IMAP_USER / IMAP_PASSWORD on the server';return;}
+    if(!r.ok){const e=await r.json();st.innerHTML='<div class="err">Mailbox error: '+(e.detail||r.status)+'</div>';return;}
+    const d=await r.json(); INBOX_EMAILS=d.emails||[];
+    if(!INBOX_EMAILS.length){st.innerHTML='<span class="note">No new invoices in the mailbox.</span>';return;}
+    st.innerHTML='<span class="tag ok">'+INBOX_EMAILS.length+' new email(s) read</span>';
+    renderExtract(INBOX_EMAILS[0].line_items, INBOX_EMAILS[0].filename);
+    $('#inbox').innerHTML=INBOX_EMAILS.map((m,i)=>`<div class="inbox-item"><div><b>${(m.from||'').split('<')[0].trim()||m.from}</b><br><span class="note">${m.subject||''} · ${m.count} line(s)</span></div>
+      <button class="ghost" onclick="openEmail(${i})">Open</button></div>`).join('');
+  }catch(e){st.innerHTML='<div class="err">Network error: '+e+'</div>';}
+}
+function openEmail(i){const m=INBOX_EMAILS[i]; if(m) renderExtract(m.line_items, m.filename);}
 
 /* ---------- 3-WAY MATCH ---------- */
 async function loadMatch(){

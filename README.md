@@ -39,3 +39,18 @@ barcodes_print.html      printable demo barcodes to scan
 ```
 
 Separate from the Project 5 deliverable repo by design. Foundation for the Ironhack Final Project.
+
+## Email capture (Reception → "Check inbox")
+
+Suppliers email invoices to a dedicated mailbox; the tool reads new ones with the same AI flow.
+
+- Endpoint: `POST /api/email/poll` — pulls **unseen** attachments (PDF/JPG/PNG), runs each through the LLM extraction, returns the proposed entries. Marks them read so they aren't reprocessed.
+- Module: `api/email_intake.py` (IMAP fetch, standard library only).
+- Config (environment variables, **never commit secrets**):
+  - `IMAP_HOST` (optional, default `imap.gmail.com`)
+  - `IMAP_USER` — the dedicated mailbox address
+  - `IMAP_PASSWORD` — a Google **app password** (requires 2-Step Verification; not the account password)
+
+On the Reception page, click **Check inbox**: new emails are read and shown as proposed entries. The simulated list remains as a fallback when no mailbox is configured.
+
+> Test with **synthetic** invoices only — real supplier documents contain third-party PII (names, IBAN, VAT) and must not be sent to the API or committed.

@@ -102,20 +102,18 @@ EXTRACT_PROMPT = (
     "If a field is absent, use null. Do not invent values."
 )
 
-@app.post("/api/extract")
-async def extract(file: UploadFile = File(...)):
-    """Upload an invoice/delivery-note image or PDF -> LLM extracts the line items as JSON.
-    Requires ANTHROPIC_API_KEY in the environment."""
+def extract_line_items(raw: bytes, filename: str, content_type: str = "") -> list:
+    """Shared LLM extraction: bytes -> list of {description, quantity, unit_price}.
+    Used by both the upload endpoint and the email-poll endpoint."""
     if not os.getenv("ANTHROPIC_API_KEY"):
         raise HTTPException(503, "ANTHROPIC_API_KEY not configured on the server")
-    raw = await file.read()
     b64 = base64.standard_b64encode(raw).decode()
-    ct = (file.content_type or "").lower()
-    if "pdf" in ct or file.filename.lower().endswith(".pdf"):
+    ct, fn = (content_type or "").lower(), (filename or "").lower()
+    if "pdf" in ct or fn.endswith(".pdf"):
         block = {"type": "document", "source": {"type": "base64",
                  "media_type": "application/pdf", "data": b64}}
     else:
-        media = "image/png" if "png" in ct or file.filename.lower().endswith(".png") else "image/jpeg"
+        media = "image/png" if "png" in ct or fn.endswith(".png") else "image/jpeg"
         block = {"type": "image", "source": {"type": "base64", "media_type": media, "data": b64}}
     try:
         from anthropic import Anthropic
@@ -127,10 +125,41 @@ async def extract(file: UploadFile = File(...)):
         )
         text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
         text = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        lines = json.loads(text)
+        return json.loads(text)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(502, f"Extraction failed: {e}")
+
+
+@app.post("/api/extract")
+async def extract(file: UploadFile = File(...)):
+    """Upload an invoice/delivery-note image or PDF -> LLM extracts the line items as JSON."""
+    raw = await file.read()
+    lines = extract_line_items(raw, file.filename, file.content_type or "")
     return {"filename": file.filename, "line_items": lines, "count": len(lines)}
+
+
+@app.post("/api/email/poll")
+def email_poll():
+    """Pull NEW invoice attachments from the configured mailbox and extract each.
+    Reads IMAP_HOST/IMAP_USER/IMAP_PASSWORD from the environment."""
+    host = os.getenv("IMAP_HOST", "imap.gmail.com")
+    user, pwd = os.getenv("IMAP_USER"), os.getenv("IMAP_PASSWORD")
+    if not (user and pwd):
+        raise HTTPException(503, "Mailbox not configured (set IMAP_USER and IMAP_PASSWORD)")
+    import imaplib
+    from .email_intake import fetch_invoice_attachments
+    try:
+        items = fetch_invoice_attachments(host, user, pwd, only_unseen=True, mark_seen=True)
+    except imaplib.IMAP4.error as e:
+        raise HTTPException(502, f"Mailbox login/read failed: {e}")
+    out = []
+    for it in items:
+        lines = extract_line_items(it["content"], it["filename"], "")
+        out.append({"filename": it["filename"], "from": it["from"],
+                    "subject": it["subject"], "line_items": lines, "count": len(lines)})
+    return {"emails": out, "count": len(out)}
 
 
 # ---- serve the web cockpit (mounted last so /api/* and /health win) -------
