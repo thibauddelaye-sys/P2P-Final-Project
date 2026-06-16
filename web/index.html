@@ -164,6 +164,13 @@
   .archline{text-align:center;margin-top:10px}
   .linkbtn{background:none;border:none;color:var(--gold);font-size:12.5px;cursor:pointer;font-family:inherit;text-decoration:underline}
   .linkbtn:hover{color:var(--bordeaux)}
+  /* --- email draft modal + archive filter --- */
+  .maildraft{width:100%;min-height:230px;padding:11px 13px;border:1px solid var(--rule);border-radius:8px;font-family:inherit;font-size:13px;line-height:1.55;color:var(--ink);resize:vertical;box-sizing:border-box;white-space:pre-wrap}
+  .maildraft:focus{outline:none;border-color:var(--gold)}
+  .rcptseg{display:inline-flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin-bottom:13px}
+  .rcptseg button{background:#fff;border:none;padding:6px 15px;font-size:12.5px;font-family:inherit;color:var(--ink);cursor:pointer;border-right:1px solid var(--rule)}
+  .rcptseg button:last-child{border-right:none}
+  .rcptseg button.on{background:var(--bordeaux);color:#fff}
 </style>
 </head>
 <body>
@@ -488,8 +495,8 @@ async function undoPost(key){try{const r=await fetch('/api/accounting/post?key='
 /* ---------- GOODS RECEIPT ---------- */
 let RCPT={deliveries:[],count:0};
 async function loadReceipts(){try{const r=await fetch('/api/receipts');RCPT=await r.json();renderReceipts();}catch(e){}}
-let SHOW_ARCH=false;
-function toggleArch(){SHOW_ARCH=!SHOW_ARCH;renderReceipts();}
+let RCPT_VIEW='active';
+function setRcptView(v){RCPT_VIEW=v;renderReceipts();}
 function renderReceipts(){
   const all=RCPT.deliveries||[];
   const active=all.filter(d=>!d.archived), arch=all.filter(d=>d.archived);
@@ -499,9 +506,11 @@ function renderReceipts(){
     <div class="tile alert"><div class="lab">To count</div><div class="val">${pending}</div></div>
     <div class="tile good"><div class="lab">Checked OK</div><div class="val">${ok}</div></div>
     <div class="tile alert"><div class="lab">With differences</div><div class="val">${disc}</div></div>`;
-  const empty=$('#rcpt-empty'); if(empty)empty.style.display=(active.length||arch.length)?'none':'block';
-  const shown=SHOW_ARCH?active.concat(arch):active;
-  $('#rcpt-list').innerHTML=shown.map(rcptBlock).join('')+(arch.length?`<div class="archline"><button class="linkbtn" onclick="toggleArch()">${SHOW_ARCH?'Hide':'Show'} ${arch.length} archived</button></div>`:'');
+  const empty=$('#rcpt-empty'); if(empty)empty.style.display='none';
+  const list=RCPT_VIEW==='archived'?arch:active;
+  const seg=`<div class="rcptseg"><button class="${RCPT_VIEW==='active'?'on':''}" onclick="setRcptView('active')">Active (${active.length})</button><button class="${RCPT_VIEW==='archived'?'on':''}" onclick="setRcptView('archived')">Archived (${arch.length})</button></div>`;
+  const emptyMsg=list.length?'':`<div class="note" style="margin-top:6px">${RCPT_VIEW==='archived'?'No archived deliveries yet. Use Archive on a checked delivery to file it here.':'No active deliveries. Capture documents on Reception, then count them here.'}</div>`;
+  $('#rcpt-list').innerHTML=seg+list.map(rcptBlock).join('')+emptyMsg;
 }
 function rcptStatus(s){
   if(s==='matched')return '<span class="tag ok">counted · no difference</span>';
@@ -540,15 +549,36 @@ function rcptBlock(d){
 async function archiveDelivery(key,on){
   try{const r=await fetch('/api/receipts/archive?key='+encodeURIComponent(key)+'&undo='+(on?'false':'true'),{method:'POST'});RCPT=await r.json();renderReceipts();}catch(e){}
 }
+let MAIL_SUBJ='', MAIL_BODY='', MAIL_TO='';
 function emailSupplier(key){
   const d=(RCPT.deliveries||[]).find(x=>x.key===key); if(!d)return;
   const disc=(d.lines||[]).filter(l=>l.status==='short'||l.status==='over');
   const lines=disc.map(l=>'- '+l.description+': livre '+l.delivered+', compte '+l.counted+' (ecart '+(l.diff>0?'+':'')+l.diff+')').join('\n');
   const by=($('#rcpt-user')?$('#rcpt-user').value:'').trim();
-  const subj='Ecart de livraison - BL '+(d.doc_number||'');
-  const body='Bonjour,\n\nLors du controle de reception du bon de livraison '+(d.doc_number||'')+(d.po_reference?' (commande '+d.po_reference+')':'')+', nous avons constate les ecarts suivants :\n\n'+lines+'\n'+(d.note?'\nExplication : '+d.note+'\n':'')+'\nLe constat detaille est joint en PDF.\n\nCordialement,\n'+(by||'')+'\nMaison Lumiere';
-  window.location.href='mailto:'+(d.supplier_email||'')+'?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(body);
+  MAIL_SUBJ='Ecart de livraison - BL '+(d.doc_number||'');
+  MAIL_BODY='Bonjour,\n\nLors du controle de reception du bon de livraison '+(d.doc_number||'')+(d.po_reference?' (commande '+d.po_reference+')':'')+', nous avons constate les ecarts suivants :\n\n'+lines+'\n'+(d.note?'\nExplication : '+d.note+'\n':'')+'\nLe constat detaille est joint en PDF (avec la photo).\n\nCordialement,\n'+(by||'')+'\nMaison Lumiere';
+  MAIL_TO=d.supplier_email||'';
+  const mailto='mailto:'+MAIL_TO+'?subject='+encodeURIComponent(MAIL_SUBJ)+'&body='+encodeURIComponent(MAIL_BODY);
+  $('#doc-modal-body').innerHTML=`<span class="x" onclick="closeDoc()">\u2715</span>
+    <div class="eyebrow">Email to supplier</div>
+    <h3 style="margin-top:4px">${MAIL_SUBJ}</h3>
+    <div class="note" style="margin:2px 0 10px">To: ${MAIL_TO?MAIL_TO:'<i>no supplier email on file for this delivery \u2014 add it in your mail app</i>'}</div>
+    <textarea id="mailbody" class="maildraft">${MAIL_BODY.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea>
+    <div class="acctactions" style="margin-top:10px">
+      <button id="copybtn" class="act mini" onclick="copyMail()">Copy email text</button>
+      <a class="act mini ghost" href="${mailto}">Open in mail app</a>
+    </div>
+    <div class="note" style="margin-top:10px">Tip: click <b>Copy email text</b>, paste it into your email (Gmail, Outlook\u2026) and attach the downloaded <b>Dispute PDF</b> \u2014 email drafts can't carry attachments.</div>`;
+  $('#doc-modal-body').classList.remove('wide');
+  $('#doc-modal').classList.add('show');
 }
+function copyMail(){
+  const txt='Subject: '+MAIL_SUBJ+'\n\n'+($('#mailbody')?$('#mailbody').value:MAIL_BODY);
+  const fb=()=>{const b=$('#copybtn'); if(b){b.textContent='Copied \u2713'; setTimeout(()=>{b.textContent='Copy email text';},1500);}};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(fb,()=>{mailFallback(txt);fb();});}
+  else{mailFallback(txt);fb();}
+}
+function mailFallback(txt){const ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.focus();ta.select();try{document.execCommand('copy');}catch(e){}document.body.removeChild(ta);}
 async function attachReceipt(key,input){
   const f=input.files&&input.files[0]; if(!f)return;
   const fd=new FormData(); fd.append('file',f);
