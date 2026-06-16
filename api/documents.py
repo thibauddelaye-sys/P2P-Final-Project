@@ -75,6 +75,11 @@ def load():
             if os.path.exists(fp):
                 with open(fp, "rb") as rf:
                     RAW[doc["key"]] = (doc.get("raw_ctype", "application/octet-stream"), rf.read())
+            if doc.get("attachment"):
+                ap = os.path.join(FILES_DIR, _fkey("attach::" + doc["key"]))
+                if os.path.exists(ap):
+                    with open(ap, "rb") as af:
+                        RAW["attach::" + doc["key"]] = (doc["attachment"].get("ctype", "application/octet-stream"), af.read())
         return len(recs)
     except Exception as e:
         print("[persist] load failed:", e); return 0
@@ -312,15 +317,16 @@ def receipts():
                           "counted": c, "diff": round(diff, 2) if diff is not None else None, "status": st})
         counted_n = sum(1 for l in lines if l["counted"] is not None)
         has_diff = any(l["status"] in ("over", "short") for l in lines)
-        status = "pending" if (not items or counted_n < len(items)) else ("discrepancy" if has_diff else "matched")
+        status = "discrepancy" if has_diff else ("matched" if (items and counted_n >= len(items)) else "pending")
         out.append({"key": d["key"], "doc_number": d.get("doc_number"), "supplier_name": d.get("supplier_name"),
                     "doc_date": d.get("doc_date"), "po_reference": d.get("po_reference"),
                     "has_file": d.get("key") in RAW, "received_at": d.get("received_at"),
-                    "counted_by": d.get("counted_by"), "lines": lines, "status": status})
+                    "counted_by": d.get("counted_by"), "note": d.get("note"), "attachment": d.get("attachment"),
+                    "lines": lines, "status": status})
     out.sort(key=lambda r: ({"pending": 0, "discrepancy": 1, "matched": 2}.get(r["status"], 0), r.get("doc_date") or ""))
     return {"deliveries": out, "count": len(out)}
 
-def save_count(key, counts, counted_by=None):
+def save_count(key, counts, counted_by=None, note=None):
     d = STORE.get(key)
     if not d or d.get("doc_type") != "delivery_note": return False
     clean = {}
@@ -329,8 +335,76 @@ def save_count(key, counts, counted_by=None):
         except (TypeError, ValueError): pass
     d["counted"] = clean
     d["counted_by"] = (counted_by or "").strip() or None
+    if note is not None:
+        d["note"] = note.strip() or None
     d["received_at"] = dt.datetime.utcnow().isoformat(timespec="seconds")
     _save_state(); return True
+
+def attach_receipt(key, filename, content, content_type=""):
+    d = STORE.get(key)
+    if not d or d.get("doc_type") != "delivery_note": return False
+    ct = content_type or _ctype(filename)
+    rk = "attach::" + key
+    RAW[rk] = (ct, content); _save_raw(rk, ct, content)
+    d["attachment"] = {"filename": filename, "ctype": ct}
+    _save_state(); return True
+
+def dispute_pdf(key):
+    d = STORE.get(key)
+    if not d or d.get("doc_type") != "delivery_note": return None
+    import fitz
+    BX=(0.549,0.110,0.169); CR=(0.984,0.973,0.949); GD=(0.659,0.533,0.310)
+    INK=(0.173,0.145,0.125); MUT=(0.46,0.43,0.40); RED=(0.72,0.13,0.13); LN=(0.85,0.83,0.80)
+    dl = next((x for x in receipts()["deliveries"] if x["key"] == key), None) or {"lines": []}
+    disc = [l for l in dl["lines"] if l["status"] in ("short", "over")]
+    doc = fitz.open(); pg = doc.new_page(width=595, height=842)
+    def txt(x, y, s, size=10, col=INK, bold=False):
+        pg.insert_text((x, y), s if s is not None else "", fontsize=size, color=col, fontname=("hebo" if bold else "helv"))
+    def rtxt(xr, y, s, size=10, col=INK, bold=False):
+        s = "" if s is None else str(s)
+        w = fitz.get_text_length(s, fontsize=size, fontname=("hebo" if bold else "helv"))
+        pg.insert_text((xr - w, y), s, fontsize=size, color=col, fontname=("hebo" if bold else "helv"))
+    def field(x, y, label, val):
+        txt(x, y, label, 8, GD, True); txt(x, y + 14, val or "\u2014", 11, INK)
+    pg.draw_rect(fitz.Rect(0, 0, 595, 92), fill=BX, color=BX)
+    txt(50, 48, "MAISON LUMI\u00c8RE", 18, CR, True)
+    txt(50, 70, "Constat d'\u00e9cart de livraison  \u00b7  Goods-receipt dispute", 10, CR)
+    y0 = 125
+    field(50, y0, "FOURNISSEUR / SUPPLIER", d.get("supplier_name"))
+    field(320, y0, "BON DE LIVRAISON / DELIVERY NOTE", d.get("doc_number"))
+    field(50, y0 + 40, "COMMANDE / ORDER", d.get("po_reference"))
+    field(320, y0 + 40, "DATE BL", d.get("doc_date"))
+    field(50, y0 + 80, "COMPT\u00c9 PAR / COUNTED BY", d.get("counted_by"))
+    field(320, y0 + 80, "DATE DU COMPTAGE", (d.get("received_at") or "").replace("T", " ")[:16])
+    ty = y0 + 135
+    pg.draw_rect(fitz.Rect(50, ty - 14, 545, ty + 4), fill=GD, color=GD)
+    txt(56, ty, "ARTICLE", 9, CR, True); rtxt(380, ty, "LIVR\u00c9", 9, CR, True)
+    rtxt(450, ty, "COMPT\u00c9", 9, CR, True); rtxt(539, ty, "\u00c9CART", 9, CR, True)
+    ty += 22
+    if not disc:
+        txt(56, ty, "Aucun \u00e9cart enregistr\u00e9 sur cette livraison.", 10, MUT); ty += 20
+    for l in disc:
+        txt(56, ty, (l["description"] or "")[:48], 10, INK)
+        rtxt(380, ty, l["delivered"] if l["delivered"] is not None else "\u2014", 10, INK)
+        rtxt(450, ty, l["counted"] if l["counted"] is not None else "\u2014", 10, INK)
+        diff = l["diff"]; rtxt(539, ty, ("+" if (diff or 0) > 0 else "") + str(diff), 10, RED, True)
+        pg.draw_line(fitz.Point(50, ty + 6), fitz.Point(545, ty + 6), color=LN, width=0.5)
+        ty += 24
+    ty += 16
+    txt(50, ty, "EXPLICATION / EXPLANATION", 8, GD, True); ty += 6
+    box = fitz.Rect(50, ty, 545, ty + 72)
+    pg.draw_rect(box, color=LN, width=0.7)
+    pg.insert_textbox(fitz.Rect(58, ty + 4, 539, ty + 68), d.get("note") or "\u2014", fontsize=10, color=INK, fontname="helv")
+    ty += 88
+    att = d.get("attachment")
+    if att and ("attach::" + key) in RAW and att.get("ctype", "").startswith("image/"):
+        txt(50, ty, "PHOTO", 8, GD, True); ty += 8
+        try:
+            pg.insert_image(fitz.Rect(50, ty, 545, min(ty + 360, 812)), stream=RAW["attach::" + key][1], keep_proportion=True)
+        except Exception:
+            txt(50, ty + 12, "(photo could not be embedded)", 9, MUT)
+    txt(50, 828, "Maison Lumi\u00e8re \u00b7 g\u00e9n\u00e9r\u00e9 le " + dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M") + " \u00b7 document de travail", 8, MUT)
+    return doc.tobytes()
 
 # Re-hydrate persisted documents at startup (kept across restarts when STORE_DIR is a volume).
 load()

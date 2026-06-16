@@ -244,9 +244,29 @@ def receipts_list():
 async def receipts_count(key: str, request: Request):
     from . import documents as docs
     body = await request.json()
-    if not docs.save_count(key, body.get("counts") or {}, body.get("counted_by")):
+    if not docs.save_count(key, body.get("counts") or {}, body.get("counted_by"), body.get("note")):
         raise HTTPException(404, "Delivery note not found")
     return docs.receipts()
+
+@app.post("/api/receipts/attach")
+async def receipts_attach(key: str, file: UploadFile = File(...)):
+    from . import documents as docs
+    content = await file.read()
+    if not docs.attach_receipt(key, file.filename, content, file.content_type or ""):
+        raise HTTPException(404, "Delivery note not found")
+    return docs.receipts()
+
+@app.get("/api/receipts/dispute.pdf")
+def receipts_dispute(key: str):
+    import re as _re
+    from . import documents as docs
+    pdf = docs.dispute_pdf(key)
+    if pdf is None:
+        raise HTTPException(404, "Delivery note not found")
+    d = docs.STORE.get(key) or {}
+    fn = "dispute-" + (_re.sub(r"[^A-Za-z0-9_-]", "", str(d.get("doc_number") or "BL")) or "BL") + ".pdf"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{fn}"'})
 
 @app.get("/api/documents")
 def documents_list():

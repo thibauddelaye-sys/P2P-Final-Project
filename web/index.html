@@ -148,6 +148,17 @@
   .mhint{position:absolute;left:0;right:0;bottom:0;font-size:10.5px;text-align:center;color:#fff;background:rgba(44,37,32,.55);padding:3px 0;pointer-events:none}
   .namein{width:200px;padding:5px 9px;border:1px solid var(--rule);border-radius:6px;font-size:13px;font-family:inherit;color:var(--ink)}
   .namein:focus{outline:none;border-color:var(--gold)}
+  /* --- goods-receipt dispute --- */
+  .dispute{border-top:1px dashed var(--rule);margin-top:8px;padding-top:9px}
+  .notein{width:100%;min-height:46px;padding:7px 9px;border:1px solid var(--rule);border-radius:6px;font-family:inherit;font-size:13px;color:var(--ink);resize:vertical;box-sizing:border-box}
+  .notein:focus{outline:none;border-color:var(--gold)}
+  .disprow{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+  .filebtn{font-size:12px;padding:5px 11px;border:1px solid var(--rule);border-radius:6px;cursor:pointer;color:var(--ink);background:#fff}
+  .filebtn:hover{border-color:var(--gold)}
+  .thumb{display:inline-block;line-height:0}
+  .thumb img{height:38px;width:38px;object-fit:cover;border:1px solid var(--rule);border-radius:6px}
+  .act.ghost{background:transparent;border:1px solid var(--bordeaux);color:var(--bordeaux);text-decoration:none;display:inline-flex;align-items:center}
+  .act.ghost:hover{background:var(--bordeaux);color:#fff}
 </style>
 </head>
 <body>
@@ -504,14 +515,29 @@ function rcptBlock(d){
   return `<div class="acctblock ${d.status==='matched'?'done':''}" data-key="${d.key}">
     <div class="blockhead"><div class="bh-left">${rcptStatus(d.status)} <span class="setref">${d.doc_number||''}</span> <span class="setsup">· ${d.supplier_name||'—'}${d.doc_date?' · '+d.doc_date:''}</span>${d.po_reference?' <span class="tag">order '+d.po_reference+'</span>':''}</div>${view}</div>
     <table class="jrn rcpt"><tr><th>Designation</th><th style="text-align:right">Delivered</th><th style="text-align:right">Counted</th><th style="text-align:right">Diff</th><th>Check</th></tr>${rows}</table>
+    ${d.status==='discrepancy'?`<div class="dispute">
+      <div class="eyebrow" style="margin:2px 0 5px">Explain the difference</div>
+      <textarea class="notein" placeholder="e.g. 2 bottles broken on arrival, refused">${(d.note||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea>
+      <div class="disprow">
+        <label class="filebtn">${d.attachment?'Replace photo':'📎 Attach photo'}<input type="file" accept="image/*" style="display:none" onchange="attachReceipt('${d.key}',this)"></label>
+        ${d.attachment?`<a class="thumb" href="${fileUrl('attach::'+d.key)}" target="_blank"><img src="${fileUrl('attach::'+d.key)+'&v='+encodeURIComponent(d.attachment.filename||'')}" alt=""></a><span class="note">${d.attachment.filename||'photo'}</span>`:'<span class="note">optional — embedded in the dispute PDF</span>'}
+        <a class="act mini ghost" href="/api/receipts/dispute.pdf?key=${encodeURIComponent(d.key)}" target="_blank">Dispute PDF ↓</a>
+      </div>
+    </div>`:''}
     <div class="acctfoot"><div class="note">${d.received_at?('Counted'+(d.counted_by?' by '+d.counted_by:'')+' · '+d.received_at.slice(0,16).replace('T',' ')):'Enter the physically counted quantities, then save.'}</div><div class="acctactions"><button class="act mini" onclick="saveCount('${d.key}')">Save count</button></div></div>
   </div>`;
+}
+async function attachReceipt(key,input){
+  const f=input.files&&input.files[0]; if(!f)return;
+  const fd=new FormData(); fd.append('file',f);
+  try{const r=await fetch('/api/receipts/attach?key='+encodeURIComponent(key),{method:'POST',body:fd});RCPT=await r.json();renderReceipts();}catch(e){}
 }
 async function saveCount(key){
   const block=document.querySelector('.acctblock[data-key="'+CSS.escape(key)+'"]'); if(!block)return;
   const counts={}; block.querySelectorAll('.cntin').forEach(inp=>{if(inp.value!=='')counts[inp.dataset.i]=inp.value;});
   const by=($('#rcpt-user')?$('#rcpt-user').value:'').trim(); try{localStorage.setItem('rcpt_user',by);}catch(e){}
-  try{const r=await fetch('/api/receipts/count?key='+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({counts,counted_by:by})});RCPT=await r.json();renderReceipts();}catch(e){}
+  const payload={counts,counted_by:by}; const noteEl=block.querySelector('.notein'); if(noteEl)payload.note=noteEl.value;
+  try{const r=await fetch('/api/receipts/count?key='+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});RCPT=await r.json();renderReceipts();}catch(e){}
 }
 
 /* ---------- nav ---------- */
