@@ -88,6 +88,9 @@
   .modal{background:var(--card);border-radius:12px;max-width:640px;width:100%;max-height:86vh;overflow:auto;padding:24px 26px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
   .modal .x{float:right;cursor:pointer;color:var(--muted);font-size:20px;line-height:1}
   #doc-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:8px}
+  .badge-email{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:5px;background:#eaf1f5;color:#2e5d78;font-weight:600;white-space:nowrap}
+  .badge-manual{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:5px;background:#f3ece2;color:#8a6a2f;font-weight:600;white-space:nowrap}
+  .exp{display:inline-block;font-size:11px;padding:2px 9px;border-radius:11px;background:var(--paper2);color:var(--ink);border:1px solid var(--gold-soft)}
 </style>
 </head>
 <body>
@@ -109,26 +112,22 @@
   <main class="main">
     <!-- PAGE I — RECEPTION -->
     <section class="page active" data-page="0">
-      <div class="eyebrow">The tool · invoice in → entry out</div>
+      <div class="eyebrow">The tool · documents in</div>
       <h1>Reception</h1>
-      <div class="sub">Drop a supplier invoice or delivery note — the AI reads it, proposes the accounting entry, and checks it against the order.</div>
-      <div class="twocol">
-        <div>
-          <div class="drop" id="drop">
-            <div class="big">Drop an invoice here</div>
-            <div>or click to choose a file · PDF, JPG or PNG</div>
-            <input type="file" id="file" accept="image/*,application/pdf" hidden>
-          </div>
-          <div id="recv-status" style="margin-top:14px"></div>
-          <div id="recv-result"></div>
-        </div>
-        <div class="panel">
-          <h3>Inbox — incoming by email</h3>
-          <div class="note" style="margin-bottom:8px">Real mailbox: suppliers email invoices in; click below to read new ones with the same flow.</div>
-          <button class="act" onclick="checkInbox()">Check inbox</button>
-          <div id="inbox-status" class="note" style="margin-top:8px"></div>
-          <div id="inbox"></div>
-        </div>
+      <div class="sub">Capture supplier documents — orders, delivery notes, invoices — by email or by drag &amp; drop. Everything lands in one place and feeds the 3-Way Match.</div>
+      <div class="docbar">
+        <button class="act" onclick="checkInboxIntake()">Check inbox</button>
+        <span class="note">…or drop files below</span>
+        <span id="intake-status" class="note"></span>
+      </div>
+      <div class="drop" id="drop">
+        <div class="big">Drop documents here</div>
+        <div>or click to choose · PDF, JPG or PNG · order, delivery note or invoice</div>
+        <input type="file" id="file" accept="image/*,application/pdf" multiple hidden>
+      </div>
+      <div class="panel"><h3>Captured documents</h3>
+        <div id="intake-empty" class="note">Nothing captured yet. Email documents to the mailbox and click “Check inbox”, or drop files above.</div>
+        <div style="overflow:auto;max-height:440px"><table id="intake-table"></table></div>
       </div>
     </section>
 
@@ -189,7 +188,7 @@ let POS=[];
 async function boot(){
   try{const h=await (await fetch('/health')).json(); $('#health').textContent='live · '+h.invoice_lines+' invoice lines';}
   catch(e){$('#health').textContent='offline';}
-  loadInbox(); loadStock(); loadDocuments();
+  loadStock(); loadDocuments();
   document.getElementById('doc-modal').addEventListener('click',e=>{if(e.target.id==='doc-modal')closeDoc();});
   try{POS=await (await fetch('/api/pos')).json();}catch(e){}
 }
@@ -200,20 +199,20 @@ const TYPE_LABEL={purchase_order:'Bon de commande',delivery_note:'Bon de livrais
 const TYPE_ORDER=['purchase_order','delivery_note','invoice'];
 const FLAG_LABEL={PRICE_VARIANCE:'price differs',OVERBILLED_QTY:'billed &gt; delivered',NOT_ON_PO:'not on the order',NOT_ON_DELIVERY:'not delivered'};
 
-async function loadDocuments(){try{const r=await fetch('/api/documents');DOCS=await r.json();renderDocs();}catch(e){}}
+async function loadDocuments(){try{const r=await fetch('/api/documents');DOCS=await r.json();renderAll();}catch(e){}}
 async function pollDocuments(){
   const st=$('#doc-status');st.innerHTML='<span class="spin"></span> Checking mailbox…';
   try{
     const r=await fetch('/api/documents/poll',{method:'POST'});
     if(r.status===503){st.innerHTML='<span class="tag warn">No mailbox connected</span> set IMAP_USER / IMAP_PASSWORD on the server';return;}
     if(!r.ok){const e=await r.json();st.innerHTML='<div class="err">Mailbox error: '+(e.detail||r.status)+'</div>';return;}
-    DOCS=await r.json();st.innerHTML='<span class="tag ok">'+(DOCS.added||0)+' new · '+DOCS.count+' captured</span>';renderDocs();
+    DOCS=await r.json();st.innerHTML='<span class="tag ok">'+(DOCS.added||0)+' new · '+DOCS.count+' captured</span>';renderAll();
   }catch(e){st.innerHTML='<div class="err">Network error: '+e+'</div>';}
 }
-async function sampleDocuments(){const r=await fetch('/api/documents/sample',{method:'POST'});DOCS=await r.json();$('#doc-status').innerHTML='<span class="note">Sample set loaded.</span>';renderDocs();}
-async function clearDocuments(){const r=await fetch('/api/documents',{method:'DELETE'});DOCS=await r.json();$('#doc-status').innerHTML='<span class="note">Cleared.</span>';renderDocs();}
+async function sampleDocuments(){const r=await fetch('/api/documents/sample',{method:'POST'});DOCS=await r.json();$('#doc-status').innerHTML='<span class="note">Sample set loaded.</span>';renderAll();}
+async function clearDocuments(){const r=await fetch('/api/documents',{method:'DELETE'});DOCS=await r.json();$('#doc-status').innerHTML='<span class="note">Cleared.</span>';renderAll();}
 
-function renderDocs(){
+function renderDocsPage(){
   Object.keys(DOCMAP).forEach(k=>delete DOCMAP[k]);
   let complete=0,exc=0;
   (DOCS.groups||[]).forEach(g=>{g.documents.forEach(d=>DOCMAP[d.key]=d);if(g.complete)complete++;if(g.match&&g.match.status==='EXCEPTION')exc++;});
@@ -268,89 +267,56 @@ $('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)
   if(i!==3)stopScan();});
 
 /* ---------- RECEPTION ---------- */
-const ACCOUNTS=[[/wine|champagne|riesling|pinot|cr[ée]mant/,'6022 Beverages — wine'],
-  [/spirit|cognac|whisky|malt|gin|vodka|rum/,'6022 Beverages — spirits'],
-  [/beer|lager|ipa|pils/,'6022 Beverages — beer'],
-  [/water|tonic|cola|juice|soft/,'6023 Beverages — soft'],
-  [/coffee|espresso|bean/,'6024 F&B — coffee'],
-  [/food|butter|salmon|foie|gras/,'6021 Food purchases']];
-const propose=d=>{const x=(d||'').toLowerCase();for(const[re,a]of ACCOUNTS)if(re.test(x))return a;return '6028 Other F&B';};
-
+const TYPE_BADGE={purchase_order:'Order',delivery_note:'Delivery note',invoice:'Invoice',unknown:'Document'};
 const drop=$('#drop'),file=$('#file');
 drop.onclick=()=>file.click();
 ['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
 ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
-drop.addEventListener('drop',e=>{if(e.dataTransfer.files[0])extract(e.dataTransfer.files[0]);});
-file.addEventListener('change',e=>{if(e.target.files[0])extract(e.target.files[0]);});
+drop.addEventListener('drop',e=>uploadFiles(e.dataTransfer.files));
+file.addEventListener('change',e=>uploadFiles(e.target.files));
 
-async function extract(f){
-  $('#recv-status').innerHTML='<span class="spin"></span> Reading <b>'+f.name+'</b> with AI…';
-  $('#recv-result').innerHTML='';
-  const fd=new FormData();fd.append('file',f);
+async function uploadFiles(list){
+  const files=[...list]; if(!files.length)return;
+  const st=$('#intake-status');
+  for(const f of files){
+    st.innerHTML='<span class="spin"></span> Reading <b>'+f.name+'</b> with AI…';
+    const fd=new FormData(); fd.append('file',f);
+    try{
+      const r=await fetch('/api/documents/upload',{method:'POST',body:fd});
+      if(r.status===503){st.innerHTML='<div class="err">AI reading needs ANTHROPIC_API_KEY on the server.</div>';return;}
+      if(!r.ok){const e=await r.json();st.innerHTML='<div class="err">Could not read '+f.name+': '+(e.detail||r.status)+'</div>';continue;}
+      DOCS=await r.json(); renderAll();
+    }catch(e){st.innerHTML='<div class="err">Network error: '+e+'</div>';return;}
+  }
+  st.innerHTML='<span class="tag ok">'+files.length+' document(s) added</span>';
+}
+async function checkInboxIntake(){
+  const st=$('#intake-status'); st.innerHTML='<span class="spin"></span> Checking mailbox…';
   try{
-    const r=await fetch('/api/extract',{method:'POST',body:fd});
-    if(r.status===503){$('#recv-status').innerHTML='<div class="err">AI reading needs an API key on the server (ANTHROPIC_API_KEY). '+
-      '<button class="ghost" onclick="sampleExtract()">Show a sample instead</button></div>';return;}
-    if(!r.ok){const e=await r.json();$('#recv-status').innerHTML='<div class="err">Could not read this file: '+(e.detail||r.status)+'</div>';return;}
-    const d=await r.json();renderExtract(d.line_items,f.name);
-  }catch(e){$('#recv-status').innerHTML='<div class="err">Network error: '+e+'</div>';}
-}
-function sampleExtract(){
-  renderExtract([{description:"Riesling Grand Cru",quantity:24,unit_price:18.10},
-    {description:"Crémant de Luxembourg",quantity:48,unit_price:12.40},
-    {description:"Still Water 75cl",quantity:120,unit_price:0.62}],"sample-invoice.pdf (simulated)");
-}
-function renderExtract(items,fname){
-  $('#recv-status').innerHTML='<div class="ok-msg">Read <b>'+fname+'</b> — '+items.length+' line(s). Proposed entries below; confirm to post.</div>';
-  let rows=items.map(it=>`<tr><td>${it.description??''}</td><td>${it.quantity??''}</td>
-    <td>${it.unit_price!=null?eur(it.unit_price):'—'}</td><td><b style="color:var(--red-deep)">${propose(it.description)}</b></td>
-    <td><span class="tag warn">17% VAT</span></td></tr>`).join('');
-  const opts=POS.map(p=>`<option value="${p.po_id}">${p.po_id} · ${p.vendor}</option>`).join('');
-  $('#recv-result').innerHTML=`<div class="panel"><h3>AI-proposed accounting entry</h3>
-    <table><tr><th>Description</th><th>Qty</th><th>Unit price</th><th>Proposed account</th><th>VAT</th></tr>${rows}</table>
-    <div style="margin-top:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-      <button class="act" onclick="postEntry()">Confirm &amp; post</button>
-      <span class="note">Match against order:</span>
-      <select id="po-pick"><option value="">— choose a PO —</option>${opts}</select>
-      <span id="match-live" class="note"></span>
-    </div></div>`;
-  const sel=$('#po-pick');if(sel)sel.onchange=()=>matchLive(items,sel.value);
-}
-function matchLive(items,po_id){
-  const po=POS.find(p=>p.po_id===po_id);const box=$('#match-live');if(!po){box.textContent='';return;}
-  let flags=0;
-  items.forEach(it=>{const ln=po.lines.find(l=>(it.description||'').toLowerCase().includes(l.name.toLowerCase().split(' ')[0].toLowerCase()));
-    if(!ln){flags++;return;}
-    if(it.unit_price!=null&&Math.abs(it.unit_price-ln.unit_price)>0.01)flags++;
-    if(it.quantity!=null&&it.quantity>ln.qty_ordered)flags++;});
-  box.innerHTML=flags?`<span class="tag bad">${flags} discrepancy(ies) vs ${po_id}</span>`:`<span class="tag ok">matches ${po_id}</span>`;
-}
-function postEntry(){$('#recv-status').innerHTML='<div class="ok-msg">Entry posted to the ledger (demo). A human approved it — nothing posts autonomously.</div>';}
-
-function loadInbox(){
-  const items=[["Vins de Moselle SARL","INV — 3 lines","2 min ago"],
-    ["Premium Spirits Lux","INV — 2 lines","18 min ago"],
-    ["Fresh Market Foods","INV — 4 lines","1 h ago"]];
-  $('#inbox').innerHTML=items.map(([v,s,t],i)=>`<div class="inbox-item"><div><b>${v}</b><br><span class="note">${s} · ${t}</span></div>
-    <button class="ghost" onclick="sampleExtract()">Ingest</button></div>`).join('');
-}
-
-let INBOX_EMAILS=[];
-async function checkInbox(){
-  const st=$('#inbox-status'); st.innerHTML='<span class="spin"></span> Checking mailbox…';
-  try{
-    const r=await fetch('/api/email/poll',{method:'POST'});
+    const r=await fetch('/api/documents/poll',{method:'POST'});
     if(r.status===503){st.innerHTML='<span class="tag warn">No mailbox connected</span> set IMAP_USER / IMAP_PASSWORD on the server';return;}
     if(!r.ok){const e=await r.json();st.innerHTML='<div class="err">Mailbox error: '+(e.detail||r.status)+'</div>';return;}
-    const d=await r.json(); INBOX_EMAILS=d.emails||[];
-    if(!INBOX_EMAILS.length){st.innerHTML='<span class="note">No new invoices in the mailbox.</span>';return;}
-    st.innerHTML='<span class="tag ok">'+INBOX_EMAILS.length+' new email(s) read</span>';
-    renderExtract(INBOX_EMAILS[0].line_items, INBOX_EMAILS[0].filename);
-    $('#inbox').innerHTML=INBOX_EMAILS.map((m,i)=>`<div class="inbox-item"><div><b>${(m.from||'').split('<')[0].trim()||m.from}</b><br><span class="note">${m.subject||''} · ${m.count} line(s)</span></div>
-      <button class="ghost" onclick="openEmail(${i})">Open</button></div>`).join('');
+    DOCS=await r.json(); st.innerHTML='<span class="tag ok">'+(DOCS.added||0)+' new · '+DOCS.count+' captured</span>'; renderAll();
   }catch(e){st.innerHTML='<div class="err">Network error: '+e+'</div>';}
 }
-function openEmail(i){const m=INBOX_EMAILS[i]; if(m) renderExtract(m.line_items, m.filename);}
+
+function allDocs(){const a=[];(DOCS.groups||[]).forEach(g=>g.documents.forEach(d=>a.push(d)));(DOCS.loose||[]).forEach(d=>a.push(d));return a;}
+function srcBadge(s){return s==='manual'?'<span class="badge-manual">✋ Manual</span>':'<span class="badge-email">📧 Email</span>';}
+function renderIntake(){
+  const docs=allDocs();
+  const empty=$('#intake-empty'); if(empty)empty.style.display=docs.length?'none':'block';
+  docs.sort((a,b)=>(b.captured_at||'').localeCompare(a.captured_at||''));
+  const t=$('#intake-table'); if(!t)return;
+  t.innerHTML=docs.length?`<tr><th>Document</th><th>Type</th><th>Source</th><th>Type of expense</th><th>Supplier</th><th>Date</th></tr>`+
+    docs.map(d=>`<tr><td><b>${d.doc_number||d.filename||''}</b></td>
+      <td><span class="tag">${TYPE_BADGE[d.doc_type]||'Document'}</span></td>
+      <td>${srcBadge(d.source)}</td>
+      <td>${d.expense_type?'<span class="exp">'+d.expense_type+'</span>':'<span class="note">—</span>'}</td>
+      <td>${d.supplier_name||'—'}</td>
+      <td>${d.doc_date||'—'}</td></tr>`).join(''):'';
+}
+function renderAll(){renderIntake();renderDocsPage();}
+
 
 /* ---------- STOCK ---------- */
 async function loadStock(){

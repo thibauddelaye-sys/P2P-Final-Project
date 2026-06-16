@@ -7,9 +7,36 @@ State is in-memory (fine for a single-worker demo). Sample data lets the page wo
 email or an API key.
 """
 from __future__ import annotations
-import base64, json, os, re, datetime as dt
+import base64, hashlib, json, os, re, datetime as dt
 
 STORE: dict[str, dict] = {}   # key -> document record
+
+RAW: dict[str, tuple] = {}    # key -> (content_type, raw_bytes) -- kept for document preview
+
+EXPENSE_RULES = [
+    (re.compile(r"wine|champagne|cr[\u00e9e]mant|riesling|pinot|vin|cognac|gin|vodka|whisky|rum|spirit|beer|bi[\u00e8e]re|lager", re.I), "Beverages"),
+    (re.compile(r"water|tonic|cola|juice|jus|orange|soft|coffee|caf[\u00e9e]|espresso", re.I), "Beverages"),
+    (re.compile(r"butter|beurre|salmon|saumon|food|foie|gras|cheese|fromage|nourriture|viande|meat|poisson|fish|l[\u00e9e]gume|fruit|pain|bread", re.I), "Food"),
+    (re.compile(r"clean|d[\u00e9e]graissant|entretien|detergent|hygi[\u00e8e]n|savon|nettoy", re.I), "Cleaning & consumables"),
+]
+def expense_category(line_items):
+    cats = []
+    for li in (line_items or []):
+        d = li.get("description") or ""
+        hit = "Other"
+        for rx, cat in EXPENSE_RULES:
+            if rx.search(d):
+                hit = cat; break
+        if hit not in cats:
+            cats.append(hit)
+    return " \u00b7 ".join(cats[:3]) if cats else None
+
+def _ctype(filename, fallback=""):
+    fn = (filename or "").lower()
+    if fn.endswith(".pdf"): return "application/pdf"
+    if fn.endswith(".png"): return "image/png"
+    if fn.endswith((".jpg", ".jpeg")): return "image/jpeg"
+    return fallback or "application/octet-stream"
 
 DOC_PROMPT = (
     "You are an accounts-payable assistant. Classify this supplier document and extract its data. "
@@ -43,7 +70,7 @@ def extract_document(raw: bytes, filename: str, content_type: str = "") -> dict:
     text = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     return json.loads(text)
 
-def ingest(items: list[dict]) -> int:
+def ingest(items: list[dict], source: str = "email") -> int:
     """items: from email_intake.fetch_invoice_attachments (content, filename, from, subject, msg_id)."""
     added = 0
     for it in items:
@@ -55,9 +82,26 @@ def ingest(items: list[dict]) -> int:
         except Exception as e:
             doc = {"doc_type":"unknown","error":str(e),"line_items":[]}
         doc.update({"key":key, "filename":it["filename"], "from":it.get("from"),
-                    "subject":it.get("subject"), "captured_at":dt.datetime.utcnow().isoformat(timespec="seconds")})
-        STORE[key] = doc; added += 1
+                    "subject":it.get("subject"), "source":source,
+                    "expense_type":expense_category(doc.get("line_items")),
+                    "captured_at":dt.datetime.utcnow().isoformat(timespec="seconds")})
+        STORE[key] = doc; RAW[key] = (_ctype(it["filename"]), it["content"]); added += 1
     return added
+
+def ingest_upload(filename: str, content: bytes, content_type: str = "") -> dict:
+    """Drag-and-drop / manual upload of a single document."""
+    key = f"manual/{filename}/{hashlib.sha1(content).hexdigest()[:8]}"
+    if key in STORE:
+        return STORE[key]
+    try:
+        doc = extract_document(content, filename, content_type)
+    except Exception as e:
+        doc = {"doc_type":"unknown","error":str(e),"line_items":[]}
+    doc.update({"key":key, "filename":filename, "from":"manual upload", "subject":None,
+                "source":"manual", "expense_type":expense_category(doc.get("line_items")),
+                "captured_at":dt.datetime.utcnow().isoformat(timespec="seconds")})
+    STORE[key] = doc; RAW[key] = (content_type or _ctype(filename), content)
+    return doc
 
 def _norm(s): return re.sub(r"[^A-Z0-9]", "", (s or "").upper())
 def _key(desc):
@@ -132,6 +176,8 @@ def load_sample():
     ]
     for d in sample:
         d.update({"key":f"sample/{d['doc_number']}","filename":f"{d['doc_number']}.pdf",
-                  "from":"sample","subject":"(sample)","captured_at":dt.datetime.utcnow().isoformat(timespec="seconds")})
+                  "from":"sample","subject":"(sample)","source":"email",
+                  "expense_type":expense_category(d.get("line_items")),
+                  "captured_at":dt.datetime.utcnow().isoformat(timespec="seconds")})
         STORE[d["key"]] = d
     return len(sample)

@@ -181,6 +181,15 @@ def documents_poll():
     added = docs.ingest(items)
     return {"added": added, **docs.grouped()}
 
+@app.post("/api/documents/upload")
+async def documents_upload(file: UploadFile = File(...)):
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise HTTPException(503, "AI reading needs ANTHROPIC_API_KEY on the server")
+    from . import documents as docs
+    content = await file.read()
+    docs.ingest_upload(file.filename, content, file.content_type or "")
+    return docs.grouped()
+
 @app.get("/api/documents")
 def documents_list():
     from . import documents as docs
