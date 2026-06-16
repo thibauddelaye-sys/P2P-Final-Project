@@ -159,6 +159,11 @@
   .thumb img{height:38px;width:38px;object-fit:cover;border:1px solid var(--rule);border-radius:6px}
   .act.ghost{background:transparent;border:1px solid var(--bordeaux);color:var(--bordeaux);text-decoration:none;display:inline-flex;align-items:center}
   .act.ghost:hover{background:var(--bordeaux);color:#fff}
+  /* --- archive + dispute actions --- */
+  .acctblock.archived{opacity:.55}
+  .archline{text-align:center;margin-top:10px}
+  .linkbtn{background:none;border:none;color:var(--gold);font-size:12.5px;cursor:pointer;font-family:inherit;text-decoration:underline}
+  .linkbtn:hover{color:var(--bordeaux)}
 </style>
 </head>
 <body>
@@ -483,16 +488,20 @@ async function undoPost(key){try{const r=await fetch('/api/accounting/post?key='
 /* ---------- GOODS RECEIPT ---------- */
 let RCPT={deliveries:[],count:0};
 async function loadReceipts(){try{const r=await fetch('/api/receipts');RCPT=await r.json();renderReceipts();}catch(e){}}
+let SHOW_ARCH=false;
+function toggleArch(){SHOW_ARCH=!SHOW_ARCH;renderReceipts();}
 function renderReceipts(){
-  const ds=RCPT.deliveries||[];
-  const pending=ds.filter(d=>d.status==='pending').length, disc=ds.filter(d=>d.status==='discrepancy').length, ok=ds.filter(d=>d.status==='matched').length;
+  const all=RCPT.deliveries||[];
+  const active=all.filter(d=>!d.archived), arch=all.filter(d=>d.archived);
+  const pending=active.filter(d=>d.status==='pending').length, disc=active.filter(d=>d.status==='discrepancy').length, ok=active.filter(d=>d.status==='matched').length;
   $('#rcpt-tiles').innerHTML=`
-    <div class="tile"><div class="lab">Deliveries</div><div class="val">${ds.length}</div></div>
+    <div class="tile"><div class="lab">Deliveries</div><div class="val">${active.length}</div></div>
     <div class="tile alert"><div class="lab">To count</div><div class="val">${pending}</div></div>
     <div class="tile good"><div class="lab">Checked OK</div><div class="val">${ok}</div></div>
     <div class="tile alert"><div class="lab">With differences</div><div class="val">${disc}</div></div>`;
-  const empty=$('#rcpt-empty'); if(empty)empty.style.display=ds.length?'none':'block';
-  $('#rcpt-list').innerHTML=ds.map(rcptBlock).join('');
+  const empty=$('#rcpt-empty'); if(empty)empty.style.display=(active.length||arch.length)?'none':'block';
+  const shown=SHOW_ARCH?active.concat(arch):active;
+  $('#rcpt-list').innerHTML=shown.map(rcptBlock).join('')+(arch.length?`<div class="archline"><button class="linkbtn" onclick="toggleArch()">${SHOW_ARCH?'Hide':'Show'} ${arch.length} archived</button></div>`:'');
 }
 function rcptStatus(s){
   if(s==='matched')return '<span class="tag ok">counted · no difference</span>';
@@ -512,7 +521,7 @@ function rcptBlock(d){
       <td style="text-align:right" class="${cls}">${diff}</td>
       <td>${chk}</td></tr>`;
   }).join('');
-  return `<div class="acctblock ${d.status==='matched'?'done':''}" data-key="${d.key}">
+  return `<div class="acctblock ${d.status==='matched'?'done':''}${d.archived?' archived':''}" data-key="${d.key}">
     <div class="blockhead"><div class="bh-left">${rcptStatus(d.status)} <span class="setref">${d.doc_number||''}</span> <span class="setsup">· ${d.supplier_name||'—'}${d.doc_date?' · '+d.doc_date:''}</span>${d.po_reference?' <span class="tag">order '+d.po_reference+'</span>':''}</div>${view}</div>
     <table class="jrn rcpt"><tr><th>Designation</th><th style="text-align:right">Delivered</th><th style="text-align:right">Counted</th><th style="text-align:right">Diff</th><th>Check</th></tr>${rows}</table>
     ${d.status==='discrepancy'?`<div class="dispute">
@@ -522,10 +531,23 @@ function rcptBlock(d){
         <label class="filebtn">${d.attachment?'Replace photo':'📎 Attach photo'}<input type="file" accept="image/*" style="display:none" onchange="attachReceipt('${d.key}',this)"></label>
         ${d.attachment?`<a class="thumb" href="${fileUrl('attach::'+d.key)}" target="_blank"><img src="${fileUrl('attach::'+d.key)+'&v='+encodeURIComponent(d.attachment.filename||'')}" alt=""></a><span class="note">${d.attachment.filename||'photo'}</span>`:'<span class="note">optional — embedded in the dispute PDF</span>'}
         <a class="act mini ghost" href="/api/receipts/dispute.pdf?key=${encodeURIComponent(d.key)}" target="_blank">Dispute PDF ↓</a>
+        <button class="act mini ghost" onclick="emailSupplier('${d.key}')">Email supplier ✉</button>
       </div>
     </div>`:''}
-    <div class="acctfoot"><div class="note">${d.received_at?('Counted'+(d.counted_by?' by '+d.counted_by:'')+' · '+d.received_at.slice(0,16).replace('T',' ')):'Enter the physically counted quantities, then save.'}</div><div class="acctactions"><button class="act mini" onclick="saveCount('${d.key}')">Save count</button></div></div>
+    <div class="acctfoot"><div class="note">${d.received_at?('Counted'+(d.counted_by?' by '+d.counted_by:'')+' · '+d.received_at.slice(0,16).replace('T',' ')):'Enter the physically counted quantities, then save.'}</div><div class="acctactions"><button class="act mini" onclick="saveCount('${d.key}')">Save count</button>${d.archived?`<button class="act mini ghost" onclick="archiveDelivery('${d.key}',false)">Unarchive</button>`:((d.status==='matched'||d.status==='discrepancy')?`<button class="act mini ghost" onclick="archiveDelivery('${d.key}',true)">Archive</button>`:'')}</div></div>
   </div>`;
+}
+async function archiveDelivery(key,on){
+  try{const r=await fetch('/api/receipts/archive?key='+encodeURIComponent(key)+'&undo='+(on?'false':'true'),{method:'POST'});RCPT=await r.json();renderReceipts();}catch(e){}
+}
+function emailSupplier(key){
+  const d=(RCPT.deliveries||[]).find(x=>x.key===key); if(!d)return;
+  const disc=(d.lines||[]).filter(l=>l.status==='short'||l.status==='over');
+  const lines=disc.map(l=>'- '+l.description+': livre '+l.delivered+', compte '+l.counted+' (ecart '+(l.diff>0?'+':'')+l.diff+')').join('\n');
+  const by=($('#rcpt-user')?$('#rcpt-user').value:'').trim();
+  const subj='Ecart de livraison - BL '+(d.doc_number||'');
+  const body='Bonjour,\n\nLors du controle de reception du bon de livraison '+(d.doc_number||'')+(d.po_reference?' (commande '+d.po_reference+')':'')+', nous avons constate les ecarts suivants :\n\n'+lines+'\n'+(d.note?'\nExplication : '+d.note+'\n':'')+'\nLe constat detaille est joint en PDF.\n\nCordialement,\n'+(by||'')+'\nMaison Lumiere';
+  window.location.href='mailto:'+(d.supplier_email||'')+'?subject='+encodeURIComponent(subj)+'&body='+encodeURIComponent(body);
 }
 async function attachReceipt(key,input){
   const f=input.files&&input.files[0]; if(!f)return;

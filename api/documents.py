@@ -322,6 +322,7 @@ def receipts():
                     "doc_date": d.get("doc_date"), "po_reference": d.get("po_reference"),
                     "has_file": d.get("key") in RAW, "received_at": d.get("received_at"),
                     "counted_by": d.get("counted_by"), "note": d.get("note"), "attachment": d.get("attachment"),
+                    "archived": bool(d.get("archived")), "supplier_email": _email_of(d.get("from")),
                     "lines": lines, "status": status})
     out.sort(key=lambda r: ({"pending": 0, "discrepancy": 1, "matched": 2}.get(r["status"], 0), r.get("doc_date") or ""))
     return {"deliveries": out, "count": len(out)}
@@ -405,6 +406,18 @@ def dispute_pdf(key):
             txt(50, ty + 12, "(photo could not be embedded)", 9, MUT)
     txt(50, 828, "Maison Lumi\u00e8re \u00b7 g\u00e9n\u00e9r\u00e9 le " + dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M") + " \u00b7 document de travail", 8, MUT)
     return doc.tobytes()
+
+def _email_of(s):
+    s = (s or "").strip()
+    if "<" in s and ">" in s:
+        s = s[s.find("<") + 1:s.find(">")].strip()
+    return s if ("@" in s and " " not in s) else None
+
+def archive_delivery(key, archived=True):
+    d = STORE.get(key)
+    if not d or d.get("doc_type") != "delivery_note": return False
+    d["archived"] = bool(archived)
+    _save_state(); return True
 
 # Re-hydrate persisted documents at startup (kept across restarts when STORE_DIR is a volume).
 load()

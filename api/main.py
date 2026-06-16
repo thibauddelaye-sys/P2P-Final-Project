@@ -256,6 +256,13 @@ async def receipts_attach(key: str, file: UploadFile = File(...)):
         raise HTTPException(404, "Delivery note not found")
     return docs.receipts()
 
+@app.post("/api/receipts/archive")
+def receipts_archive(key: str, undo: bool = False):
+    from . import documents as docs
+    if not docs.archive_delivery(key, not undo):
+        raise HTTPException(404, "Delivery note not found")
+    return docs.receipts()
+
 @app.get("/api/receipts/dispute.pdf")
 def receipts_dispute(key: str):
     import re as _re
