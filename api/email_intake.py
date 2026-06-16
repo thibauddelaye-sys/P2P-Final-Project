@@ -48,6 +48,7 @@ def fetch_invoice_attachments(host: str, user: str, password: str,
                 continue
             msg = email.message_from_bytes(msg_data[0][1])
             sender, subject = _decode(msg.get("From")), _decode(msg.get("Subject"))
+            msg_id = _decode(msg.get("Message-ID"))
             had_attachment = False
             for part in msg.walk():
                 if part.get_content_maintype() == "multipart":
@@ -57,7 +58,7 @@ def fetch_invoice_attachments(host: str, user: str, password: str,
                     payload = part.get_payload(decode=True)
                     if payload:
                         results.append({"filename": _decode(fn), "content": payload,
-                                        "from": sender, "subject": subject})
+                                        "from": sender, "subject": subject, "msg_id": msg_id})
                         had_attachment = True
             if mark_seen and had_attachment:
                 M.store(num, "+FLAGS", "\\Seen")

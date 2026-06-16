@@ -162,6 +162,43 @@ def email_poll():
     return {"emails": out, "count": len(out)}
 
 
+# ---- document capture & autonomous 3-way matching -------------------------
+@app.post("/api/documents/poll")
+def documents_poll():
+    """Capture ALL document types from the mailbox (PO / delivery note / invoice), classify,
+    extract and store them. Re-reads the mailbox and de-dupes, so it is safe to call repeatedly."""
+    host = os.getenv("IMAP_HOST", "imap.gmail.com")
+    user, pwd = os.getenv("IMAP_USER"), os.getenv("IMAP_PASSWORD")
+    if not (user and pwd):
+        raise HTTPException(503, "Mailbox not configured (set IMAP_USER and IMAP_PASSWORD)")
+    import imaplib
+    from . import documents as docs
+    from .email_intake import fetch_invoice_attachments
+    try:
+        items = fetch_invoice_attachments(host, user, pwd, only_unseen=False, mark_seen=False)
+    except imaplib.IMAP4.error as e:
+        raise HTTPException(502, f"Mailbox login/read failed: {e}")
+    added = docs.ingest(items)
+    return {"added": added, **docs.grouped()}
+
+@app.get("/api/documents")
+def documents_list():
+    from . import documents as docs
+    return docs.grouped()
+
+@app.post("/api/documents/sample")
+def documents_sample():
+    from . import documents as docs
+    docs.load_sample()
+    return docs.grouped()
+
+@app.delete("/api/documents")
+def documents_clear():
+    from . import documents as docs
+    docs.STORE.clear()
+    return {"cleared": True, **docs.grouped()}
+
+
 # ---- serve the web cockpit (mounted last so /api/* and /health win) -------
 from fastapi.staticfiles import StaticFiles
 WEB = Path(__file__).resolve().parents[1] / "web"

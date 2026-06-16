@@ -54,3 +54,16 @@ Suppliers email invoices to a dedicated mailbox; the tool reads new ones with th
 On the Reception page, click **Check inbox**: new emails are read and shown as proposed entries. The simulated list remains as a fallback when no mailbox is configured.
 
 > Test with **synthetic** invoices only — real supplier documents contain third-party PII (names, IBAN, VAT) and must not be sent to the API or committed.
+
+## Documents page — capture everything, match automatically
+
+Beyond the single-invoice Reception flow, the **Documents** page captures *all* document types
+emailed to the mailbox (purchase orders, delivery notes, invoices), classifies and extracts each
+with the LLM, and **groups them automatically by purchase-order number**. A complete set
+(PO + delivery note + invoice) is run through a 3-way match; exceptions (e.g. a price billed above
+what was ordered) are flagged with the € caught before payment. Click any document to inspect what
+the AI read.
+
+Endpoints: `POST /api/documents/poll` (capture from mailbox), `GET /api/documents` (grouped view),
+`POST /api/documents/sample` (load a demo set — works with no mailbox/API key), `DELETE /api/documents`.
+State is in-memory (single-worker demo); re-polling re-reads and de-dupes, so it is safe to repeat.

@@ -68,6 +68,26 @@
   .result{font-family:var(--display);font-size:22px;color:var(--red-deep)}
   .spin{display:inline-block;width:15px;height:15px;border:2px solid var(--gold-soft);border-top-color:var(--red);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
   @keyframes sp{to{transform:rotate(360deg)}}
+  /* --- documents / validation page --- */
+  .docbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:6px 0 4px}
+  .setcard{background:var(--card);border:1px solid var(--rule);border-left:4px solid var(--gold);border-radius:11px;padding:16px 18px;margin-top:14px}
+  .setcard.exc{border-left-color:var(--red)} .setcard.ok{border-left-color:var(--green)} .setcard.inc{border-left-color:var(--amber)}
+  .sethead{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+  .setref{font-family:var(--display);font-size:17px;color:var(--red-deep);font-weight:600}
+  .setsup{font-size:12.5px;color:var(--muted)}
+  .setlink{display:flex;align-items:center;gap:6px;color:var(--gold);font-size:11px;letter-spacing:.04em;margin:10px 0 2px}
+  .chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+  .chip{display:flex;flex-direction:column;gap:2px;border:1px solid var(--rule);border-radius:8px;padding:9px 12px;min-width:155px;background:var(--paper3);cursor:pointer;transition:.12s}
+  .chip:hover{border-color:var(--gold);background:var(--paper2)}
+  .chip .ct{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold)}
+  .chip .cn{font-size:13.5px;color:var(--ink);font-weight:600}
+  .chip.missing{cursor:default;border-style:dashed;background:transparent;opacity:.65}
+  .chip.missing .cn{color:var(--muted);font-weight:400}
+  .modal-bg{position:fixed;inset:0;background:rgba(44,37,32,.5);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--card);border-radius:12px;max-width:640px;width:100%;max-height:86vh;overflow:auto;padding:24px 26px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  .modal .x{float:right;cursor:pointer;color:var(--muted);font-size:20px;line-height:1}
+  #doc-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:8px}
 </style>
 </head>
 <body>
@@ -82,6 +102,7 @@
       <button data-p="1"><span class="n">II</span>3-Way Match</button>
       <button data-p="2"><span class="n">III</span>Stock &amp; Reorder</button>
       <button data-p="3"><span class="n">IV</span>Scan</button>
+      <button data-p="4"><span class="n">V</span>Documents</button>
     </nav>
     <div class="foot"><div id="health">connecting…</div><div style="margin-top:10px;opacity:.85">AI reads,<br>humans decide.</div></div>
   </aside>
@@ -150,6 +171,23 @@
         <div class="panel"><h3>Last issued</h3><div id="scan-result"><div class="note">Nothing scanned yet.</div></div></div>
       </div>
     </section>
+    <!-- PAGE V — DOCUMENTS -->
+    <section class="page" data-page="4">
+      <div class="eyebrow">The tool · capture everything, match automatically</div>
+      <h1>Documents</h1>
+      <div class="sub">Every document emailed in — purchase orders, delivery notes, invoices — captured and grouped automatically when they belong to the same order. Click any document to see exactly what the AI read.</div>
+      <div class="docbar">
+        <button class="act" onclick="pollDocuments()">Check inbox</button>
+        <button class="ghost" onclick="sampleDocuments()">Load sample set</button>
+        <button class="ghost" onclick="clearDocuments()">Clear</button>
+        <span id="doc-status" class="note"></span>
+      </div>
+      <div id="doc-tiles"></div>
+      <div id="doc-groups"></div>
+      <div id="doc-loose"></div>
+    </section>
+
+    <div class="modal-bg" id="doc-modal"><div class="modal" id="doc-modal-body"></div></div>
   </main>
 </div>
 
@@ -161,9 +199,77 @@ let POS=[];
 async function boot(){
   try{const h=await (await fetch('/health')).json(); $('#health').textContent='live · '+h.invoice_lines+' invoice lines';}
   catch(e){$('#health').textContent='offline';}
-  loadInbox(); loadMatch(); loadStock();
+  loadInbox(); loadMatch(); loadStock(); loadDocuments();
+  document.getElementById('doc-modal').addEventListener('click',e=>{if(e.target.id==='doc-modal')closeDoc();});
   try{POS=await (await fetch('/api/pos')).json();}catch(e){}
 }
+
+/* ---------- DOCUMENTS ---------- */
+let DOCS={groups:[],loose:[],count:0}; const DOCMAP={};
+const TYPE_LABEL={purchase_order:'Bon de commande',delivery_note:'Bon de livraison',invoice:'Facture',unknown:'Document'};
+const TYPE_ORDER=['purchase_order','delivery_note','invoice'];
+const FLAG_LABEL={PRICE_VARIANCE:'price differs',OVERBILLED_QTY:'billed &gt; delivered',NOT_ON_PO:'not on the order',NOT_ON_DELIVERY:'not delivered'};
+
+async function loadDocuments(){try{const r=await fetch('/api/documents');DOCS=await r.json();renderDocs();}catch(e){}}
+async function pollDocuments(){
+  const st=$('#doc-status');st.innerHTML='<span class="spin"></span> Checking mailbox…';
+  try{
+    const r=await fetch('/api/documents/poll',{method:'POST'});
+    if(r.status===503){st.innerHTML='<span class="tag warn">No mailbox connected</span> set IMAP_USER / IMAP_PASSWORD on the server';return;}
+    if(!r.ok){const e=await r.json();st.innerHTML='<div class="err">Mailbox error: '+(e.detail||r.status)+'</div>';return;}
+    DOCS=await r.json();st.innerHTML='<span class="tag ok">'+(DOCS.added||0)+' new · '+DOCS.count+' captured</span>';renderDocs();
+  }catch(e){st.innerHTML='<div class="err">Network error: '+e+'</div>';}
+}
+async function sampleDocuments(){const r=await fetch('/api/documents/sample',{method:'POST'});DOCS=await r.json();$('#doc-status').innerHTML='<span class="note">Sample set loaded.</span>';renderDocs();}
+async function clearDocuments(){const r=await fetch('/api/documents',{method:'DELETE'});DOCS=await r.json();$('#doc-status').innerHTML='<span class="note">Cleared.</span>';renderDocs();}
+
+function renderDocs(){
+  Object.keys(DOCMAP).forEach(k=>delete DOCMAP[k]);
+  let complete=0,exc=0;
+  (DOCS.groups||[]).forEach(g=>{g.documents.forEach(d=>DOCMAP[d.key]=d);if(g.complete)complete++;if(g.match&&g.match.status==='EXCEPTION')exc++;});
+  (DOCS.loose||[]).forEach(d=>DOCMAP[d.key]=d);
+  $('#doc-tiles').innerHTML=`
+    <div class="tile"><div class="lab">Captured</div><div class="val">${DOCS.count||0}</div></div>
+    <div class="tile good"><div class="lab">Matched sets</div><div class="val">${Math.max(complete-exc,0)}</div></div>
+    <div class="tile alert"><div class="lab">Sets with exceptions</div><div class="val">${exc}</div></div>`;
+  $('#doc-groups').innerHTML=(DOCS.groups||[]).map(groupCard).join('')||'<div class="note" style="margin-top:14px">No document sets yet. Email the documents to your mailbox, then click “Check inbox” — or load the sample set.</div>';
+  const loose=DOCS.loose||[];
+  $('#doc-loose').innerHTML=loose.length?`<div class="panel"><h3>Awaiting a matching set</h3><div class="note" style="margin-bottom:8px">Captured, but no order number yet links them into a complete set.</div><div class="chips">${loose.map(chip).join('')}</div></div>`:'';
+}
+function groupCard(g){
+  let cls='inc',badge='<span class="tag warn">incomplete set</span>';
+  if(g.complete&&g.match){
+    if(g.match.status==='MATCHED'){cls='ok';badge='<span class="tag ok">3-way matched</span>';}
+    else{cls='exc';badge='<span class="tag bad">'+g.match.exceptions+' exception'+(g.match.exceptions>1?'s':'')+' · '+eur(g.match.overpay_eur)+' caught</span>';}
+  }
+  const chips=TYPE_ORDER.map(t=>{const d=g.documents.find(x=>x.doc_type===t);return d?chip(d):missingChip(t);}).join('');
+  let detail='';
+  if(g.complete&&g.match){
+    const flagged=g.match.lines.filter(l=>l.flags.length);
+    detail=flagged.length
+      ? '<div style="margin-top:12px">'+flagged.map(l=>`<div class="note">🚩 <b>${l.description}</b> — ${l.flags.map(f=>FLAG_LABEL[f]||f).join(', ')} (ordered ${l.qty_ordered}, delivered ${l.qty_received}, billed ${l.qty_billed}${l.po_price!=null&&l.inv_price!=null?', PO '+eur(l.po_price)+' vs invoice '+eur(l.inv_price):''})</div>`).join('')+'</div>'
+      : '<div class="note" style="margin-top:12px;color:var(--green)">All '+g.match.lines.length+' lines reconcile — ordered = delivered = billed, prices match.</div>';
+  }
+  return `<div class="setcard ${cls}"><div class="sethead"><div><span class="setref">${g.po_reference}</span> <span class="setsup">· ${g.supplier||'—'}</span></div>${badge}</div>
+    <div class="setlink">▸ DOCUMENTS IN THIS SET — click to inspect what the AI read</div>
+    <div class="chips">${chips}</div>${detail}</div>`;
+}
+function chip(d){return `<div class="chip" onclick="openDoc('${d.key}')"><span class="ct">${TYPE_LABEL[d.doc_type]||'Document'}</span><span class="cn">${d.doc_number||d.filename||''}</span></div>`;}
+function missingChip(t){return `<div class="chip missing"><span class="ct">${TYPE_LABEL[t]}</span><span class="cn">— missing —</span></div>`;}
+function openDoc(key){
+  const d=DOCMAP[key];if(!d)return;
+  const rows=(d.line_items||[]).map(li=>`<tr><td>${li.description??''}</td><td style="text-align:right">${li.quantity??''}</td><td style="text-align:right">${li.unit_price!=null?eur(li.unit_price):'—'}</td></tr>`).join('');
+  $('#doc-modal-body').innerHTML=`<span class="x" onclick="closeDoc()">✕</span>
+    <div class="eyebrow">${TYPE_LABEL[d.doc_type]||'Document'}</div>
+    <h3 style="margin-top:4px">${d.doc_number||d.filename||''}</h3>
+    <div class="note">${d.supplier_name||''}${d.doc_date?' · '+d.doc_date:''}${d.po_reference?' · order '+d.po_reference:''}</div>
+    <table style="margin-top:14px"><tr><th>Designation</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit price</th></tr>${rows||'<tr><td class="note" colspan="3">No line items extracted.</td></tr>'}</table>
+    ${d.total_incl_vat!=null?'<div style="text-align:right;margin-top:10px"><b>Total TTC '+eur(d.total_incl_vat)+'</b></div>':''}
+    ${d.error?'<div class="err" style="margin-top:12px">Extraction issue: '+d.error+'</div>':''}
+    <div class="note" style="margin-top:14px;font-size:11px">Captured ${d.captured_at||''} · ${d.filename||''}</div>`;
+  $('#doc-modal').classList.add('show');
+}
+function closeDoc(){$('#doc-modal').classList.remove('show');}
 
 /* ---------- nav ---------- */
 $('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
