@@ -102,7 +102,6 @@
       <button data-p="1"><span class="n">II</span>3-Way Match</button>
       <button data-p="2"><span class="n">III</span>Stock &amp; Reorder</button>
       <button data-p="3"><span class="n">IV</span>Scan</button>
-      <button data-p="4"><span class="n">V</span>Documents</button>
     </nav>
     <div class="foot"><div id="health">connecting…</div><div style="margin-top:10px;opacity:.85">AI reads,<br>humans decide.</div></div>
   </aside>
@@ -131,15 +130,6 @@
           <div id="inbox"></div>
         </div>
       </div>
-    </section>
-
-    <!-- PAGE II — 3-WAY MATCH -->
-    <section class="page" data-page="1">
-      <div class="eyebrow">Control · invoice ↔ delivery ↔ order</div>
-      <h1>3-Way Match</h1>
-      <div class="sub">Every invoice line checked against what was ordered and what was received. Discrepancies are caught before payment.</div>
-      <div class="tiles" id="match-tiles"></div>
-      <div class="panel"><h3>Invoice lines</h3><div style="overflow:auto;max-height:440px"><table id="match-table"></table></div></div>
     </section>
 
     <!-- PAGE III — STOCK -->
@@ -171,11 +161,11 @@
         <div class="panel"><h3>Last issued</h3><div id="scan-result"><div class="note">Nothing scanned yet.</div></div></div>
       </div>
     </section>
-    <!-- PAGE V — DOCUMENTS -->
-    <section class="page" data-page="4">
-      <div class="eyebrow">The tool · capture everything, match automatically</div>
-      <h1>Documents</h1>
-      <div class="sub">Every document emailed in — purchase orders, delivery notes, invoices — captured and grouped automatically when they belong to the same order. Click any document to see exactly what the AI read.</div>
+    <!-- PAGE II — 3-WAY MATCH (live, from captured documents) -->
+    <section class="page" data-page="1">
+      <div class="eyebrow">Control · invoice ↔ delivery ↔ order</div>
+      <h1>3-Way Match</h1>
+      <div class="sub">Purchase orders, delivery notes and invoices captured from the mailbox, grouped automatically by order, then checked line by line. Discrepancies are caught before payment. Click any document to inspect what the AI read.</div>
       <div class="docbar">
         <button class="act" onclick="pollDocuments()">Check inbox</button>
         <button class="ghost" onclick="sampleDocuments()">Load sample set</button>
@@ -199,7 +189,7 @@ let POS=[];
 async function boot(){
   try{const h=await (await fetch('/health')).json(); $('#health').textContent='live · '+h.invoice_lines+' invoice lines';}
   catch(e){$('#health').textContent='offline';}
-  loadInbox(); loadMatch(); loadStock(); loadDocuments();
+  loadInbox(); loadStock(); loadDocuments();
   document.getElementById('doc-modal').addEventListener('click',e=>{if(e.target.id==='doc-modal')closeDoc();});
   try{POS=await (await fetch('/api/pos')).json();}catch(e){}
 }
@@ -361,24 +351,6 @@ async function checkInbox(){
   }catch(e){st.innerHTML='<div class="err">Network error: '+e+'</div>';}
 }
 function openEmail(i){const m=INBOX_EMAILS[i]; if(m) renderExtract(m.line_items, m.filename);}
-
-/* ---------- 3-WAY MATCH ---------- */
-async function loadMatch(){
-  const d=await (await fetch('/api/match')).json();const s=d.summary;
-  $('#match-tiles').innerHTML=`
-    <div class="tile good"><div class="lab">Matched</div><div class="val">${Math.round(s.matched/s.lines*100)}%</div></div>
-    <div class="tile alert"><div class="lab">Exceptions</div><div class="val">${s.exceptions}</div></div>
-    <div class="tile alert"><div class="lab">Overbilled lines</div><div class="val">${s.overbilled}</div></div>
-    <div class="tile"><div class="lab">€ caught pre-payment</div><div class="val">${eur(s.overpay_caught_eur)}</div></div>`;
-  const tagFor=f=>f==='—'?'<span class="tag ok">matched</span>':f.split('|').map(x=>{
-    const c=/OVERBILL|NO_|PRICE/.test(x)?'bad':'warn';return `<span class="tag ${c}">${x.replace(/_/g,' ').toLowerCase()}</span>`;}).join(' ');
-  let rows=d.rows.map(r=>`<tr class="${r.flags!=='—'?'flagged':''}"><td>${r.inv_id}</td><td>${r.po_id}</td><td>${r.sku}</td>
-    <td>${r.qty_ordered??'—'}</td><td>${r.qty_received}</td><td>${r.qty_billed}</td>
-    <td>${eur(r.po_unit_price)}</td><td>${eur(r.inv_unit_price)}</td><td>${tagFor(r.flags)}</td>
-    <td>${r.overpay_eur>0?'<b style="color:var(--red)">'+eur(r.overpay_eur)+'</b>':'—'}</td></tr>`).join('');
-  $('#match-table').innerHTML=`<tr><th>Invoice</th><th>PO</th><th>SKU</th><th>Ord</th><th>Recv</th><th>Bill</th>
-    <th>PO €</th><th>Inv €</th><th>Status</th><th>Overpay</th></tr>${rows}`;
-}
 
 /* ---------- STOCK ---------- */
 async function loadStock(){
