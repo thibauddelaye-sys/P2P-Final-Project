@@ -191,6 +191,29 @@ async def documents_upload(file: UploadFile = File(...)):
     docs.ingest_upload(file.filename, content, file.content_type or "")
     return docs.grouped()
 
+_PAGE_CACHE: dict = {}   # (key, n) -> rendered PNG bytes
+
+@app.get("/api/documents/page")
+def documents_page(key: str, n: int = 0):
+    """Render a document page to PNG (for the interactive magnifier preview)."""
+    from . import documents as docs
+    item = docs.RAW.get(key)
+    if not item:
+        raise HTTPException(404, "Document file not available")
+    ctype, content = item
+    if (ctype or "").startswith("image/"):
+        return Response(content=content, media_type=ctype, headers={"Content-Disposition": "inline"})
+    ck = (key, n)
+    if ck not in _PAGE_CACHE:
+        try:
+            import fitz
+            d = fitz.open(stream=content, filetype="pdf")
+            page = d[max(0, min(n, d.page_count - 1))]
+            _PAGE_CACHE[ck] = page.get_pixmap(matrix=fitz.Matrix(2, 2)).tobytes("png")
+        except Exception as e:
+            raise HTTPException(500, f"Could not render page: {e}")
+    return Response(content=_PAGE_CACHE[ck], media_type="image/png", headers={"Content-Disposition": "inline"})
+
 @app.get("/api/documents/file")
 def documents_file(key: str):
     from . import documents as docs

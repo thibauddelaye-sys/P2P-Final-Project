@@ -113,8 +113,11 @@
   .iconbtn{background:none;border:1px solid var(--rule);border-radius:7px;padding:2px 8px;cursor:pointer;font-size:14px;line-height:1.25}
   .iconbtn:hover{border-color:var(--gold);background:var(--card)}
   button.mini{padding:5px 12px;font-size:12.5px}
-  #hover-prev{position:fixed;display:none;width:262px;height:336px;background:#fff;border:1px solid var(--rule);border-radius:9px;box-shadow:0 14px 40px rgba(0,0,0,.28);overflow:hidden;z-index:60;pointer-events:none}
-  #hover-prev iframe,#hover-prev img{width:100%;height:100%;border:0;object-fit:contain;background:#fff}
+  #hover-prev{position:fixed;display:none;width:304px;background:#fff;border:1px solid var(--rule);border-radius:9px;box-shadow:0 16px 44px rgba(0,0,0,.30);overflow:hidden;z-index:60}
+  .prevwrap{position:relative;cursor:crosshair;line-height:0}
+  .previmg{display:block;width:100%;height:auto;background:#fff}
+  .lens{position:absolute;display:none;width:148px;height:148px;border:2px solid var(--gold);border-radius:50%;background-repeat:no-repeat;background-color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.35);pointer-events:none}
+  .prevhint{position:absolute;left:0;right:0;bottom:0;font-size:10.5px;text-align:center;color:#fff;background:rgba(44,37,32,.6);padding:3px 0;pointer-events:none}
   .modal.wide{max-width:1000px}
   .docview{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;margin-top:14px}
   .docframe{width:100%;height:64vh;border:1px solid var(--rule);border-radius:8px;background:#fff}
@@ -293,18 +296,43 @@ function docRow(d){
 }
 function missRow(t){return `<div class="drow miss"><span class="rtype">${TYPE_LABEL[t]}</span><span class="rnum">— missing —</span><span class="rsrc"></span><span class="rdate"></span><span class="rview"></span></div>`;}
 
-let prevTimer=null;
-function showPrev(e,key){clearTimeout(prevTimer);const t=e.currentTarget;prevTimer=setTimeout(()=>_doPrev(t,key),160);}
-function _doPrev(t,key){
-  const p=$('#hover-prev');if(!p||!t)return;
-  const d=DOCMAP[key]||{};const url=fileUrl(key);const isImg=(d.raw_ctype||'').startsWith('image/');
-  p.innerHTML=isImg?`<img src="${url}">`:`<iframe src="${url}#toolbar=0&navpanes=0&view=FitH" frameborder="0"></iframe>`;
-  const r=t.getBoundingClientRect();const pw=262,ph=336,m=14;
-  let left=r.right+m;if(left+pw>window.innerWidth)left=Math.max(8,r.left-pw-m);
-  let top=Math.min(Math.max(r.top,10),window.innerHeight-ph-10);
-  p.style.left=left+'px';p.style.top=top+'px';p.style.display='block';
+function pageUrl(key,n){return '/api/documents/page?key='+encodeURIComponent(key)+'&n='+(n||0);}
+let prevTimer=null, prevWired=false;
+function _wirePanel(){
+  if(prevWired)return; const p=$('#hover-prev'); if(!p)return;
+  p.addEventListener('mouseenter',()=>clearTimeout(prevTimer));
+  p.addEventListener('mouseleave',hidePrev);
+  prevWired=true;
 }
-function hidePrev(){clearTimeout(prevTimer);const p=$('#hover-prev');if(p){p.style.display='none';p.innerHTML='';}}
+function showPrev(e,key){clearTimeout(prevTimer);const t=e.currentTarget;prevTimer=setTimeout(()=>_doPrev(t,key),140);}
+function _doPrev(t,key){
+  const p=$('#hover-prev'); if(!p||!t)return; _wirePanel();
+  const src=pageUrl(key,0);
+  p.innerHTML=`<div class="prevwrap"><img class="previmg" src="${src}" alt=""><div class="lens"></div><div class="prevhint">Move the mouse to zoom</div></div>`;
+  const r=t.getBoundingClientRect(); const pw=304,ph=432,m=12;
+  let left=r.right+m; if(left+pw>window.innerWidth) left=Math.max(8,r.left-pw-m);
+  let top=Math.min(Math.max(r.top,10), Math.max(10,window.innerHeight-ph-10));
+  p.style.left=left+'px'; p.style.top=top+'px'; p.style.display='block';
+  const wrap=p.querySelector('.prevwrap'), img=p.querySelector('.previmg'), lens=p.querySelector('.lens');
+  const ZOOM=2.6;
+  wrap.addEventListener('mousemove',ev=>{
+    const ir=img.getBoundingClientRect();
+    if(!ir.width||!ir.height){lens.style.display='none';return;}
+    const x=ev.clientX-ir.left, y=ev.clientY-ir.top;
+    if(x<0||y<0||x>ir.width||y>ir.height){lens.style.display='none';return;}
+    lens.style.display='block';
+    const lw=lens.offsetWidth, lh=lens.offsetHeight;
+    lens.style.backgroundImage=`url(${src})`;
+    lens.style.backgroundSize=`${ir.width*ZOOM}px ${ir.height*ZOOM}px`;
+    lens.style.backgroundPosition=`-${x*ZOOM-lw/2}px -${y*ZOOM-lh/2}px`;
+    const wr=wrap.getBoundingClientRect();
+    lens.style.left=(ev.clientX-wr.left-lw/2)+'px';
+    lens.style.top=(ev.clientY-wr.top-lh/2)+'px';
+  });
+  wrap.addEventListener('mouseleave',()=>{lens.style.display='none';});
+}
+function hidePrev(){clearTimeout(prevTimer);prevTimer=setTimeout(_hideNow,200);}
+function _hideNow(){const p=$('#hover-prev');if(p){p.style.display='none';p.innerHTML='';}}
 
 function openFile(key){
   const d=DOCMAP[key];if(!d)return;hidePrev();
