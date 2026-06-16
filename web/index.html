@@ -171,6 +171,10 @@
   .rcptseg button{background:#fff;border:none;padding:6px 15px;font-size:12.5px;font-family:inherit;color:var(--ink);cursor:pointer;border-right:1px solid var(--rule)}
   .rcptseg button:last-child{border-right:none}
   .rcptseg button.on{background:var(--bordeaux);color:#fff}
+  /* --- per-delivery counted-by --- */
+  .rcptby{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .cntby{width:150px;padding:4px 9px;border:1px solid var(--rule);border-radius:6px;font-family:inherit;font-size:12.5px;color:var(--ink)}
+  .cntby:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
@@ -268,7 +272,6 @@
       <div class="eyebrow">Receiving · count vs delivery note</div>
       <h1>Goods receipt</h1>
       <div class="sub">When goods arrive, enter the quantities physically counted against each delivery note. The tool flags any difference versus what the supplier says was delivered — so the receiving control is documented before stock and payment.</div>
-      <div class="docbar" style="margin:2px 0 6px"><span class="note">Counted by</span> <input id="rcpt-user" class="namein" placeholder="your name"></div>
       <div id="rcpt-tiles"></div>
       <div id="rcpt-empty" class="note" style="margin-top:14px">No delivery notes captured yet. Capture documents on Reception, then count them here.</div>
       <div id="rcpt-list"></div>
@@ -286,7 +289,7 @@ let POS=[];
 async function boot(){
   try{const h=await (await fetch('/health')).json(); $('#health').textContent='live · '+h.invoice_lines+' invoice lines';}
   catch(e){$('#health').textContent='offline';}
-  loadDocuments(); loadAccounting(); loadReceipts(); try{const _u=localStorage.getItem('rcpt_user');if(_u){const el=$('#rcpt-user');if(el)el.value=_u;}}catch(e){}
+  loadDocuments(); loadAccounting(); loadReceipts();
   document.getElementById('doc-modal').addEventListener('click',e=>{if(e.target.id==='doc-modal')closeDoc();});
   try{POS=await (await fetch('/api/pos')).json();}catch(e){}
 }
@@ -517,6 +520,7 @@ function rcptStatus(s){
   if(s==='discrepancy')return '<span class="tag bad">difference found</span>';
   return '<span class="tag warn">to count</span>';
 }
+function lastBy(){try{return localStorage.getItem('rcpt_user')||'';}catch(e){return '';}}
 function rcptBlock(d){
   const view=d.has_file?`<button class="iconbtn" title="View delivery note" onclick="openFile('${d.key}')">🔍</button>`:'';
   const rows=d.lines.map(l=>{
@@ -543,7 +547,7 @@ function rcptBlock(d){
         <button class="act mini ghost" onclick="emailSupplier('${d.key}')">Email supplier ✉</button>
       </div>
     </div>`:''}
-    <div class="acctfoot"><div class="note">${d.received_at?('Counted'+(d.counted_by?' by '+d.counted_by:'')+' · '+d.received_at.slice(0,16).replace('T',' ')):'Enter the physically counted quantities, then save.'}</div><div class="acctactions"><button class="act mini" onclick="saveCount('${d.key}')">Save count</button>${d.archived?`<button class="act mini ghost" onclick="archiveDelivery('${d.key}',false)">Unarchive</button>`:((d.status==='matched'||d.status==='discrepancy')?`<button class="act mini ghost" onclick="archiveDelivery('${d.key}',true)">Archive</button>`:'')}</div></div>
+    <div class="acctfoot"><div class="rcptby"><span class="note">Counted by</span> <input class="cntby" value="${(d.counted_by!=null?d.counted_by:lastBy()).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" placeholder="name">${d.received_at?' <span class="note">· '+d.received_at.slice(0,16).replace('T',' ')+'</span>':''}</div><div class="acctactions"><button class="act mini" onclick="saveCount('${d.key}')">Save count</button>${d.archived?`<button class="act mini ghost" onclick="archiveDelivery('${d.key}',false)">Unarchive</button>`:((d.status==='matched'||d.status==='discrepancy')?`<button class="act mini ghost" onclick="archiveDelivery('${d.key}',true)">Archive</button>`:'')}</div></div>
   </div>`;
 }
 async function archiveDelivery(key,on){
@@ -554,7 +558,7 @@ function emailSupplier(key){
   const d=(RCPT.deliveries||[]).find(x=>x.key===key); if(!d)return;
   const disc=(d.lines||[]).filter(l=>l.status==='short'||l.status==='over');
   const lines=disc.map(l=>'- '+l.description+': livre '+l.delivered+', compte '+l.counted+' (ecart '+(l.diff>0?'+':'')+l.diff+')').join('\n');
-  const by=($('#rcpt-user')?$('#rcpt-user').value:'').trim();
+  const by=(d.counted_by||'').trim();
   MAIL_SUBJ='Ecart de livraison - BL '+(d.doc_number||'');
   MAIL_BODY='Bonjour,\n\nLors du controle de reception du bon de livraison '+(d.doc_number||'')+(d.po_reference?' (commande '+d.po_reference+')':'')+', nous avons constate les ecarts suivants :\n\n'+lines+'\n'+(d.note?'\nExplication : '+d.note+'\n':'')+'\nLe constat detaille est joint en PDF (avec la photo).\n\nCordialement,\n'+(by||'')+'\nMaison Lumiere';
   MAIL_TO=d.supplier_email||'';
@@ -587,7 +591,7 @@ async function attachReceipt(key,input){
 async function saveCount(key){
   const block=document.querySelector('.acctblock[data-key="'+CSS.escape(key)+'"]'); if(!block)return;
   const counts={}; block.querySelectorAll('.cntin').forEach(inp=>{if(inp.value!=='')counts[inp.dataset.i]=inp.value;});
-  const by=($('#rcpt-user')?$('#rcpt-user').value:'').trim(); try{localStorage.setItem('rcpt_user',by);}catch(e){}
+  const byEl=block.querySelector('.cntby'); const by=(byEl?byEl.value:'').trim(); if(by){try{localStorage.setItem('rcpt_user',by);}catch(e){}}
   const payload={counts,counted_by:by}; const noteEl=block.querySelector('.notein'); if(noteEl)payload.note=noteEl.value;
   try{const r=await fetch('/api/receipts/count?key='+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});RCPT=await r.json();renderReceipts();}catch(e){}
 }
