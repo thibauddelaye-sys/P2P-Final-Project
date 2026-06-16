@@ -316,11 +316,11 @@ def receipts():
         out.append({"key": d["key"], "doc_number": d.get("doc_number"), "supplier_name": d.get("supplier_name"),
                     "doc_date": d.get("doc_date"), "po_reference": d.get("po_reference"),
                     "has_file": d.get("key") in RAW, "received_at": d.get("received_at"),
-                    "lines": lines, "status": status})
+                    "counted_by": d.get("counted_by"), "lines": lines, "status": status})
     out.sort(key=lambda r: ({"pending": 0, "discrepancy": 1, "matched": 2}.get(r["status"], 0), r.get("doc_date") or ""))
     return {"deliveries": out, "count": len(out)}
 
-def save_count(key, counts):
+def save_count(key, counts, counted_by=None):
     d = STORE.get(key)
     if not d or d.get("doc_type") != "delivery_note": return False
     clean = {}
@@ -328,6 +328,7 @@ def save_count(key, counts):
         try: clean[str(int(k))] = round(float(v), 3)
         except (TypeError, ValueError): pass
     d["counted"] = clean
+    d["counted_by"] = (counted_by or "").strip() or None
     d["received_at"] = dt.datetime.utcnow().isoformat(timespec="seconds")
     _save_state(); return True
 

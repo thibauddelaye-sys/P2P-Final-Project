@@ -141,6 +141,13 @@
   .cntin:focus{outline:none;border-color:var(--gold)}
   table.rcpt td,table.rcpt th{padding:7px 12px}
   .rok{color:var(--green)} .rmis{color:var(--red);font-weight:700}
+  /* --- modal magnifier + name input --- */
+  .mwrap{position:relative;cursor:crosshair;line-height:0;border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+  .mimg{display:block;width:100%;height:auto;background:#fff}
+  .mlens{position:absolute;display:none;width:170px;height:170px;border:2px solid var(--gold);border-radius:50%;background-repeat:no-repeat;background-color:#fff;box-shadow:0 6px 22px rgba(0,0,0,.4);pointer-events:none}
+  .mhint{position:absolute;left:0;right:0;bottom:0;font-size:10.5px;text-align:center;color:#fff;background:rgba(44,37,32,.55);padding:3px 0;pointer-events:none}
+  .namein{width:200px;padding:5px 9px;border:1px solid var(--rule);border-radius:6px;font-size:13px;font-family:inherit;color:var(--ink)}
+  .namein:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
@@ -238,6 +245,7 @@
       <div class="eyebrow">Receiving · count vs delivery note</div>
       <h1>Goods receipt</h1>
       <div class="sub">When goods arrive, enter the quantities physically counted against each delivery note. The tool flags any difference versus what the supplier says was delivered — so the receiving control is documented before stock and payment.</div>
+      <div class="docbar" style="margin:2px 0 6px"><span class="note">Counted by</span> <input id="rcpt-user" class="namein" placeholder="your name"></div>
       <div id="rcpt-tiles"></div>
       <div id="rcpt-empty" class="note" style="margin-top:14px">No delivery notes captured yet. Capture documents on Reception, then count them here.</div>
       <div id="rcpt-list"></div>
@@ -255,7 +263,7 @@ let POS=[];
 async function boot(){
   try{const h=await (await fetch('/health')).json(); $('#health').textContent='live · '+h.invoice_lines+' invoice lines';}
   catch(e){$('#health').textContent='offline';}
-  loadDocuments(); loadAccounting(); loadReceipts();
+  loadDocuments(); loadAccounting(); loadReceipts(); try{const _u=localStorage.getItem('rcpt_user');if(_u){const el=$('#rcpt-user');if(el)el.value=_u;}}catch(e){}
   document.getElementById('doc-modal').addEventListener('click',e=>{if(e.target.id==='doc-modal')closeDoc();});
   try{POS=await (await fetch('/api/pos')).json();}catch(e){}
 }
@@ -368,9 +376,8 @@ function _hideNow(){const p=$('#hover-prev');if(p){p.style.display='none';p.inne
 
 function openFile(key){
   const d=DOCMAP[key];if(!d)return;hidePrev();
-  const url=fileUrl(key);const isImg=(d.raw_ctype||'').startsWith('image/');
   const rows=(d.line_items||[]).map(li=>`<tr><td>${li.description??''}</td><td style="text-align:right">${li.quantity??''}</td><td style="text-align:right">${li.unit_price!=null?eur(li.unit_price):'—'}</td></tr>`).join('');
-  const viewer=d.has_file?(isImg?`<img src="${url}" style="max-width:100%;border:1px solid var(--rule);border-radius:8px">`:`<iframe src="${url}#view=FitH" frameborder="0" class="docframe"></iframe>`):'<div class="note">No file stored for this document.</div>';
+  const viewer=d.has_file?`<div class="mwrap"><img class="mimg" src="${pageUrl(key,0)}" alt=""><div class="mlens"></div><div class="mhint">Move the mouse to zoom</div></div>`:'<div class="note">No file stored for this document.</div>';
   $('#doc-modal-body').innerHTML=`<span class="x" onclick="closeDoc()">✕</span>
     <div class="eyebrow">${TYPE_LABEL[d.doc_type]||'Document'}</div>
     <h3 style="margin-top:4px">${d.doc_number||d.filename||''}</h3>
@@ -382,6 +389,26 @@ function openFile(key){
         ${d.error?'<div class="err" style="margin-top:10px">Extraction issue: '+d.error+'</div>':''}
       </div></div>`;
   $('#doc-modal-body').classList.add('wide');$('#doc-modal').classList.add('show');
+  wireModalLens();
+}
+function wireModalLens(){
+  const wrap=document.querySelector('#doc-modal-body .mwrap'); if(!wrap)return;
+  const img=wrap.querySelector('.mimg'), lens=wrap.querySelector('.mlens'); const ZOOM=2.4;
+  wrap.addEventListener('mousemove',ev=>{
+    const ir=img.getBoundingClientRect();
+    if(!ir.width||!ir.height){lens.style.display='none';return;}
+    const x=ev.clientX-ir.left, y=ev.clientY-ir.top;
+    if(x<0||y<0||x>ir.width||y>ir.height){lens.style.display='none';return;}
+    lens.style.display='block';
+    const lw=lens.offsetWidth, lh=lens.offsetHeight;
+    lens.style.backgroundImage=`url(${img.src})`;
+    lens.style.backgroundSize=`${ir.width*ZOOM}px ${ir.height*ZOOM}px`;
+    lens.style.backgroundPosition=`-${x*ZOOM-lw/2}px -${y*ZOOM-lh/2}px`;
+    const wr=wrap.getBoundingClientRect();
+    lens.style.left=(ev.clientX-wr.left-lw/2)+'px';
+    lens.style.top=(ev.clientY-wr.top-lh/2)+'px';
+  });
+  wrap.addEventListener('mouseleave',()=>{lens.style.display='none';});
 }
 function openCompare(ref){
   const g=(DOCS.groups||[]).find(x=>x.po_reference===ref);if(!g||!g.match)return;hidePrev();
@@ -477,13 +504,14 @@ function rcptBlock(d){
   return `<div class="acctblock ${d.status==='matched'?'done':''}" data-key="${d.key}">
     <div class="blockhead"><div class="bh-left">${rcptStatus(d.status)} <span class="setref">${d.doc_number||''}</span> <span class="setsup">· ${d.supplier_name||'—'}${d.doc_date?' · '+d.doc_date:''}</span>${d.po_reference?' <span class="tag">order '+d.po_reference+'</span>':''}</div>${view}</div>
     <table class="jrn rcpt"><tr><th>Designation</th><th style="text-align:right">Delivered</th><th style="text-align:right">Counted</th><th style="text-align:right">Diff</th><th>Check</th></tr>${rows}</table>
-    <div class="acctfoot"><div class="note">${d.received_at?'Last counted '+d.received_at.slice(0,16).replace('T',' '):'Enter the physically counted quantities, then save.'}</div><div class="acctactions"><button class="act mini" onclick="saveCount('${d.key}')">Save count</button></div></div>
+    <div class="acctfoot"><div class="note">${d.received_at?('Counted'+(d.counted_by?' by '+d.counted_by:'')+' · '+d.received_at.slice(0,16).replace('T',' ')):'Enter the physically counted quantities, then save.'}</div><div class="acctactions"><button class="act mini" onclick="saveCount('${d.key}')">Save count</button></div></div>
   </div>`;
 }
 async function saveCount(key){
   const block=document.querySelector('.acctblock[data-key="'+CSS.escape(key)+'"]'); if(!block)return;
   const counts={}; block.querySelectorAll('.cntin').forEach(inp=>{if(inp.value!=='')counts[inp.dataset.i]=inp.value;});
-  try{const r=await fetch('/api/receipts/count?key='+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({counts})});RCPT=await r.json();renderReceipts();}catch(e){}
+  const by=($('#rcpt-user')?$('#rcpt-user').value:'').trim(); try{localStorage.setItem('rcpt_user',by);}catch(e){}
+  try{const r=await fetch('/api/receipts/count?key='+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({counts,counted_by:by})});RCPT=await r.json();renderReceipts();}catch(e){}
 }
 
 /* ---------- nav ---------- */

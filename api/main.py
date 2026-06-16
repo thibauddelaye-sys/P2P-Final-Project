@@ -209,7 +209,7 @@ def documents_page(key: str, n: int = 0):
             import fitz
             d = fitz.open(stream=content, filetype="pdf")
             page = d[max(0, min(n, d.page_count - 1))]
-            _PAGE_CACHE[ck] = page.get_pixmap(matrix=fitz.Matrix(2, 2)).tobytes("png")
+            _PAGE_CACHE[ck] = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5)).tobytes("png")
         except Exception as e:
             raise HTTPException(500, f"Could not render page: {e}")
     return Response(content=_PAGE_CACHE[ck], media_type="image/png", headers={"Content-Disposition": "inline"})
@@ -244,7 +244,7 @@ def receipts_list():
 async def receipts_count(key: str, request: Request):
     from . import documents as docs
     body = await request.json()
-    if not docs.save_count(key, body.get("counts") or {}):
+    if not docs.save_count(key, body.get("counts") or {}, body.get("counted_by")):
         raise HTTPException(404, "Delivery note not found")
     return docs.receipts()
 
