@@ -125,6 +125,17 @@
   table.cmp th,table.cmp td{font-size:12.5px;padding:7px 9px}
   .mis{color:var(--red);font-weight:700}
   @media(max-width:780px){.docview{grid-template-columns:1fr}.docframe{height:50vh}}
+  /* --- Accounting posting --- */
+  .acctblock{background:var(--card);border:1px solid var(--rule);border-left:4px solid var(--gold);border-radius:11px;margin-top:14px;overflow:hidden}
+  .acctblock.done{border-left-color:var(--green)}
+  table.jrn{width:100%}
+  table.jrn th,table.jrn td{font-size:12.5px;padding:7px 14px}
+  table.jrn .da{color:var(--muted);width:62px}
+  table.jrn .ac{font-variant-numeric:tabular-nums;color:var(--gold);font-weight:600;width:70px}
+  table.jrn tr.cr td{border-top:2px solid var(--rule)}
+  .acctfoot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--rule);background:var(--paper3)}
+  .acctactions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  button.act.mini{padding:5px 13px;font-size:12.5px}
 </style>
 </head>
 <body>
@@ -137,8 +148,9 @@
     <nav id="nav">
       <button class="active" data-p="0"><span class="n">I</span>Reception</button>
       <button data-p="1"><span class="n">II</span>3-Way Match</button>
-      <button data-p="2"><span class="n">III</span>Stock &amp; Reorder</button>
-      <button data-p="3"><span class="n">IV</span>Scan</button>
+      <button data-p="4"><span class="n">III</span>Accounting</button>
+      <button data-p="2"><span class="n">IV</span>Stock &amp; Reorder</button>
+      <button data-p="3"><span class="n">V</span>Scan</button>
     </nav>
     <div class="foot"><div id="health">connecting…</div><div style="margin-top:10px;opacity:.85">AI reads,<br>humans decide.</div></div>
   </aside>
@@ -210,6 +222,14 @@
       <div id="doc-loose"></div>
     </section>
 
+    <section class="page" data-page="4">
+      <div class="eyebrow">Accounting · invoice → journal entry</div>
+      <h1>Accounting posting</h1>
+      <div class="sub">For each captured invoice, the AI proposes the accounting entry — expense accounts split by type, recoverable VAT, and the payable to the supplier — balanced and ready to review. Nothing posts on its own; a human approves every entry. Suggested account codes — map them to your chart.</div>
+      <div id="acct-tiles"></div>
+      <div id="acct-empty" class="note" style="margin-top:14px">No invoices captured yet. Capture documents on Reception, then post them here.</div>
+      <div id="acct-list"></div>
+    </section>
     <div class="modal-bg" id="doc-modal"><div class="modal" id="doc-modal-body"></div></div>
     <div id="hover-prev"></div>
   </main>
@@ -223,7 +243,7 @@ let POS=[];
 async function boot(){
   try{const h=await (await fetch('/health')).json(); $('#health').textContent='live · '+h.invoice_lines+' invoice lines';}
   catch(e){$('#health').textContent='offline';}
-  loadStock(); loadDocuments();
+  loadStock(); loadDocuments(); loadAccounting();
   document.getElementById('doc-modal').addEventListener('click',e=>{if(e.target.id==='doc-modal')closeDoc();});
   try{POS=await (await fetch('/api/pos')).json();}catch(e){}
 }
@@ -375,11 +395,46 @@ function openCompare(ref){
 }
 function closeDoc(){$('#doc-modal').classList.remove('show');$('#doc-modal-body').classList.remove('wide');}
 
+/* ---------- ACCOUNTING POSTING ---------- */
+let ACCT={invoices:[],count:0};
+async function loadAccounting(){try{const r=await fetch('/api/accounting');ACCT=await r.json();renderAccounting();}catch(e){}}
+function renderAccounting(){
+  const inv=ACCT.invoices||[];
+  const toPost=inv.filter(i=>!i.posted).length, posted=inv.length-toPost;
+  const payable=inv.filter(i=>!i.posted).reduce((s,i)=>s+(i.entry.gross||0),0);
+  $('#acct-tiles').innerHTML=`
+    <div class="tile"><div class="lab">Invoices</div><div class="val">${inv.length}</div></div>
+    <div class="tile alert"><div class="lab">To post</div><div class="val">${toPost}</div></div>
+    <div class="tile good"><div class="lab">Posted</div><div class="val">${posted}</div></div>
+    <div class="tile"><div class="lab">Open payable</div><div class="val" style="font-size:23px">${eur(payable)}</div></div>`;
+  const empty=$('#acct-empty'); if(empty)empty.style.display=inv.length?'none':'block';
+  $('#acct-list').innerHTML=inv.map(acctBlock).join('');
+}
+function acctBlock(i){
+  const e=i.entry;
+  const drows=e.debits.map(d=>`<tr><td class="da">Debit</td><td class="ac">${d.account}</td><td>${d.label}</td><td style="text-align:right">${eur(d.amount)}</td></tr>`).join('');
+  const crow=`<tr class="cr"><td class="da">Credit</td><td class="ac">${e.credit.account}</td><td>${e.credit.label}</td><td style="text-align:right">${eur(e.credit.amount)}</td></tr>`;
+  const bal=e.balanced?'<span class="tag ok">balanced</span>':'<span class="tag bad">unbalanced</span>';
+  const view=i.has_file?`<button class="iconbtn" title="View invoice" onclick="openFile('${i.key}')">🔍</button>`:'';
+  const rate=e.assumed_vat?'assumed 17%':Math.round(e.vat_rate*100)+'%';
+  const act=i.posted
+    ?`<span class="tag ok">✓ posted${i.posted_at?' · '+i.posted_at.slice(0,10):''}</span> <button class="ghost mini" onclick="undoPost('${i.key}')">Undo</button>`
+    :`<button class="act mini" onclick="postEntry('${i.key}')">Post entry</button>`;
+  return `<div class="acctblock ${i.posted?'done':''}">
+    <div class="blockhead"><div class="bh-left"><span class="setref">${i.doc_number||''}</span> <span class="setsup">· ${i.supplier_name||'—'}${i.doc_date?' · '+i.doc_date:''}</span>${i.po_reference?' <span class="tag">order '+i.po_reference+'</span>':''}</div>${view}</div>
+    <table class="jrn"><tr><th>Side</th><th>Account</th><th>Designation</th><th style="text-align:right">${i.currency||'EUR'}</th></tr>${drows}${crow}</table>
+    <div class="acctfoot"><div class="note">Net ${eur(e.net)} · VAT ${eur(e.vat)} (${rate}) · Gross ${eur(e.gross)}</div><div class="acctactions">${bal} ${act}</div></div>
+  </div>`;
+}
+async function postEntry(key){try{const r=await fetch('/api/accounting/post?key='+encodeURIComponent(key),{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
+async function undoPost(key){try{const r=await fetch('/api/accounting/post?key='+encodeURIComponent(key)+'&undo=true',{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
+
+
 /* ---------- nav ---------- */
 $('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');
   const i=+b.dataset.p;document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',+p.dataset.page===i));
-  if(i!==3)stopScan();});
+  if(i!==3)stopScan(); if(i===4)loadAccounting();});
 
 /* ---------- RECEPTION ---------- */
 const TYPE_BADGE={purchase_order:'Order',delivery_note:'Delivery note',invoice:'Invoice',unknown:'Document'};

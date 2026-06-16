@@ -223,6 +223,18 @@ def documents_file(key: str):
     ctype, content = item
     return Response(content=content, media_type=ctype, headers={"Content-Disposition": "inline"})
 
+@app.get("/api/accounting")
+def accounting_list():
+    from . import documents as docs
+    return docs.accounting()
+
+@app.post("/api/accounting/post")
+def accounting_post(key: str, undo: bool = False):
+    from . import documents as docs
+    if not docs.mark_posted(key, posted=not undo):
+        raise HTTPException(404, "Invoice not found")
+    return docs.accounting()
+
 @app.get("/api/documents")
 def documents_list():
     from . import documents as docs

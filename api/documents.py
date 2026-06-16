@@ -239,5 +239,62 @@ def load_sample():
         STORE[d["key"]] = d
     return len(sample)
 
+# ---- accounting: propose a double-entry journal for each invoice ----
+GL_RULES = [
+    (re.compile(r"wine|champagne|cr[\u00e9e]mant|riesling|pinot", re.I), ("6022", "Beverages \u2014 wine")),
+    (re.compile(r"spirit|cognac|whisky|malt|gin|vodka|rum", re.I),        ("6022", "Beverages \u2014 spirits")),
+    (re.compile(r"beer|lager|ipa|pils|bi[\u00e8e]re", re.I),             ("6022", "Beverages \u2014 beer")),
+    (re.compile(r"water|tonic|cola|juice|jus|orange|soft", re.I),         ("6023", "Beverages \u2014 soft")),
+    (re.compile(r"coffee|caf[\u00e9e]|espresso|bean", re.I),             ("6024", "F&B \u2014 coffee")),
+    (re.compile(r"food|butter|beurre|salmon|saumon|foie|gras|cheese|fromage|meat|viande|fish|poisson|bread|pain", re.I), ("6021", "Food purchases")),
+    (re.compile(r"clean|d[\u00e9e]graissant|entretien|detergent|hygi[\u00e8e]n|savon|nettoy", re.I), ("6063", "Cleaning & consumables")),
+]
+def gl_account(desc):
+    x = desc or ""
+    for rx, acc in GL_RULES:
+        if rx.search(x): return acc
+    return ("6028", "Other F&B")
+
+def accounting_entry(doc):
+    by_acc, net = {}, 0.0
+    for li in (doc.get("line_items") or []):
+        u = li.get("unit_price")
+        if u is None: continue
+        amt = round((li.get("quantity") or 0) * u, 2); net += amt
+        acc = gl_account(li.get("description"))
+        by_acc[acc] = round(by_acc.get(acc, 0.0) + amt, 2)
+    net = round(net, 2)
+    ttc = doc.get("total_incl_vat")
+    if ttc and ttc > net + 0.01:
+        vat = round(ttc - net, 2); assumed = False
+    else:
+        vat = round(net * 0.17, 2); ttc = round(net + vat, 2); assumed = True
+    debits = [{"account": c, "label": l, "amount": a} for (c, l), a in sorted(by_acc.items())]
+    debits.append({"account": "44566", "label": "Input VAT", "amount": vat})
+    credit = {"account": "4011", "label": "Accounts payable \u2014 " + (doc.get("supplier_name") or "supplier"), "amount": ttc}
+    total_debit = round(sum(d["amount"] for d in debits), 2)
+    return {"debits": debits, "credit": credit, "net": net, "vat": vat,
+            "vat_rate": round(vat/net, 4) if net else 0.0, "gross": ttc,
+            "assumed_vat": assumed, "balanced": abs(total_debit - ttc) < 0.01}
+
+def accounting():
+    out = []
+    for d in STORE.values():
+        if d.get("doc_type") != "invoice": continue
+        out.append({"key": d["key"], "doc_number": d.get("doc_number"), "supplier_name": d.get("supplier_name"),
+                    "doc_date": d.get("doc_date"), "currency": d.get("currency") or "EUR",
+                    "po_reference": d.get("po_reference"), "has_file": d.get("key") in RAW,
+                    "posted": bool(d.get("posted")), "posted_at": d.get("posted_at"),
+                    "entry": accounting_entry(d)})
+    out.sort(key=lambda r: (r["posted"], r.get("doc_date") or "", r.get("doc_number") or ""))
+    return {"invoices": out, "count": len(out)}
+
+def mark_posted(key, posted=True):
+    d = STORE.get(key)
+    if not d: return False
+    d["posted"] = posted
+    d["posted_at"] = dt.datetime.utcnow().isoformat(timespec="seconds") if posted else None
+    _save_state(); return True
+
 # Re-hydrate persisted documents at startup (kept across restarts when STORE_DIR is a volume).
 load()
