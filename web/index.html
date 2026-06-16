@@ -91,6 +91,37 @@
   .badge-email{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:5px;background:#eaf1f5;color:#2e5d78;font-weight:600;white-space:nowrap}
   .badge-manual{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:5px;background:#f3ece2;color:#8a6a2f;font-weight:600;white-space:nowrap}
   .exp{display:inline-block;font-size:11px;padding:2px 9px;border-radius:11px;background:var(--paper2);color:var(--ink);border:1px solid var(--gold-soft)}
+  /* --- 3-Way Match: list + hover preview + compare --- */
+  .setblock{background:var(--card);border:1px solid var(--rule);border-left:4px solid var(--gold);border-radius:11px;margin-top:14px;overflow:hidden}
+  .setblock.ok{border-left-color:var(--green)} .setblock.exc{border-left-color:var(--red)} .setblock.inc{border-left-color:var(--amber)}
+  .blockhead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 16px;background:var(--paper3);border-bottom:1px solid var(--rule)}
+  .bh-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .setref{font-weight:700;color:var(--ink);letter-spacing:.02em}
+  .setsup{color:var(--muted)}
+  .rows{display:flex;flex-direction:column}
+  .drow{display:flex;align-items:center;gap:14px;padding:9px 16px;border-top:1px solid var(--rule)}
+  .rows .drow:first-child{border-top:none}
+  .drow:hover{background:var(--paper2)}
+  .rtype{flex:0 0 132px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);font-weight:600}
+  .rnum{flex:1 1 auto;font-weight:600;color:var(--ink)}
+  .rsrc{flex:0 0 auto}
+  .rdate{flex:0 0 86px;color:var(--muted);font-size:12px;text-align:right}
+  .rview{flex:0 0 40px;text-align:right}
+  .drow.miss{opacity:.55} .drow.miss .rnum{color:var(--muted);font-weight:400}
+  .blocknote{padding:10px 16px;font-size:13px;border-top:1px solid var(--rule)}
+  .blocknote.ok{color:var(--green)} .blocknote.bad{color:var(--ink)}
+  .iconbtn{background:none;border:1px solid var(--rule);border-radius:7px;padding:2px 8px;cursor:pointer;font-size:14px;line-height:1.25}
+  .iconbtn:hover{border-color:var(--gold);background:var(--card)}
+  button.mini{padding:5px 12px;font-size:12.5px}
+  #hover-prev{position:fixed;display:none;width:262px;height:336px;background:#fff;border:1px solid var(--rule);border-radius:9px;box-shadow:0 14px 40px rgba(0,0,0,.28);overflow:hidden;z-index:60;pointer-events:none}
+  #hover-prev iframe,#hover-prev img{width:100%;height:100%;border:0;object-fit:contain;background:#fff}
+  .modal.wide{max-width:1000px}
+  .docview{display:grid;grid-template-columns:1.25fr 1fr;gap:18px;margin-top:14px}
+  .docframe{width:100%;height:64vh;border:1px solid var(--rule);border-radius:8px;background:#fff}
+  .docview-data table{width:100%}
+  table.cmp th,table.cmp td{font-size:12.5px;padding:7px 9px}
+  .mis{color:var(--red);font-weight:700}
+  @media(max-width:780px){.docview{grid-template-columns:1fr}.docframe{height:50vh}}
 </style>
 </head>
 <body>
@@ -164,7 +195,7 @@
     <section class="page" data-page="1">
       <div class="eyebrow">Control · invoice ↔ delivery ↔ order</div>
       <h1>3-Way Match</h1>
-      <div class="sub">Purchase orders, delivery notes and invoices captured from the mailbox, grouped automatically by order, then checked line by line. Discrepancies are caught before payment. Click any document to inspect what the AI read.</div>
+      <div class="sub">Purchase orders, delivery notes and invoices captured from the mailbox, grouped automatically by order, then checked line by line. Hover a row to preview the document, open the magnifier to view it full-size, and use Compare to check ordered vs delivered vs billed.</div>
       <div class="docbar">
         <button class="act" onclick="pollDocuments()">Check inbox</button>
         <button class="ghost" onclick="sampleDocuments()">Load sample set</button>
@@ -177,6 +208,7 @@
     </section>
 
     <div class="modal-bg" id="doc-modal"><div class="modal" id="doc-modal-body"></div></div>
+    <div id="hover-prev"></div>
   </main>
 </div>
 
@@ -212,6 +244,8 @@ async function pollDocuments(){
 async function sampleDocuments(){const r=await fetch('/api/documents/sample',{method:'POST'});DOCS=await r.json();$('#doc-status').innerHTML='<span class="note">Sample set loaded.</span>';renderAll();}
 async function clearDocuments(){const r=await fetch('/api/documents',{method:'DELETE'});DOCS=await r.json();$('#doc-status').innerHTML='<span class="note">Cleared.</span>';renderAll();}
 
+function fileUrl(key){return '/api/documents/file?key='+encodeURIComponent(key);}
+
 function renderDocsPage(){
   Object.keys(DOCMAP).forEach(k=>delete DOCMAP[k]);
   let complete=0,exc=0;
@@ -221,44 +255,97 @@ function renderDocsPage(){
     <div class="tile"><div class="lab">Captured</div><div class="val">${DOCS.count||0}</div></div>
     <div class="tile good"><div class="lab">Matched sets</div><div class="val">${Math.max(complete-exc,0)}</div></div>
     <div class="tile alert"><div class="lab">Sets with exceptions</div><div class="val">${exc}</div></div>`;
-  $('#doc-groups').innerHTML=(DOCS.groups||[]).map(groupCard).join('')||'<div class="note" style="margin-top:14px">No document sets yet. Email the documents to your mailbox, then click “Check inbox” — or load the sample set.</div>';
+  const groups=DOCS.groups||[];
+  $('#doc-groups').innerHTML=groups.length?groups.map(groupBlock).join(''):'<div class="note" style="margin-top:14px">No documents yet. Email them to your mailbox, then click "Check inbox" — or load the sample set.</div>';
   const loose=DOCS.loose||[];
-  $('#doc-loose').innerHTML=loose.length?`<div class="panel"><h3>Awaiting a matching set</h3><div class="note" style="margin-bottom:8px">Captured, but no order number yet links them into a complete set.</div><div class="chips">${loose.map(chip).join('')}</div></div>`:'';
+  $('#doc-loose').innerHTML=loose.length?`<div class="setblock inc" style="margin-top:14px"><div class="blockhead"><div class="bh-left"><span class="tag warn">awaiting a match</span> <span class="setref">No order number yet</span></div></div><div class="rows">${loose.map(docRow).join('')}</div></div>`:'';
 }
-function groupCard(g){
-  let cls='inc',badge='<span class="tag warn">incomplete set</span>';
-  if(g.complete&&g.match){
-    if(g.match.status==='MATCHED'){cls='ok';badge='<span class="tag ok">3-way matched</span>';}
-    else{cls='exc';badge='<span class="tag bad">'+g.match.exceptions+' exception'+(g.match.exceptions>1?'s':'')+' · '+eur(g.match.overpay_eur)+' caught</span>';}
-  }
-  const chips=TYPE_ORDER.map(t=>{const d=g.documents.find(x=>x.doc_type===t);return d?chip(d):missingChip(t);}).join('');
-  let detail='';
-  if(g.complete&&g.match){
-    const flagged=g.match.lines.filter(l=>l.flags.length);
-    detail=flagged.length
-      ? '<div style="margin-top:12px">'+flagged.map(l=>`<div class="note">🚩 <b>${l.description}</b> — ${l.flags.map(f=>FLAG_LABEL[f]||f).join(', ')} (ordered ${l.qty_ordered}, delivered ${l.qty_received}, billed ${l.qty_billed}${l.po_price!=null&&l.inv_price!=null?', PO '+eur(l.po_price)+' vs invoice '+eur(l.inv_price):''})</div>`).join('')+'</div>'
-      : '<div class="note" style="margin-top:12px;color:var(--green)">All '+g.match.lines.length+' lines reconcile — ordered = delivered = billed, prices match.</div>';
-  }
-  return `<div class="setcard ${cls}"><div class="sethead"><div><span class="setref">${g.po_reference}</span> <span class="setsup">· ${g.supplier||'—'}</span></div>${badge}</div>
-    <div class="setlink">▸ DOCUMENTS IN THIS SET — click to inspect what the AI read</div>
-    <div class="chips">${chips}</div>${detail}</div>`;
+
+function statusPill(g){
+  if(!g.complete) return '<span class="tag warn">incomplete set</span>';
+  if(g.match.status==='MATCHED') return '<span class="tag ok">3-way matched</span>';
+  return '<span class="tag bad">'+g.match.exceptions+' exception'+(g.match.exceptions>1?'s':'')+' · '+eur(g.match.overpay_eur)+' caught</span>';
 }
-function chip(d){return `<div class="chip" onclick="openDoc('${d.key}')"><span class="ct">${TYPE_LABEL[d.doc_type]||'Document'}</span><span class="cn">${d.doc_number||d.filename||''}</span></div>`;}
-function missingChip(t){return `<div class="chip missing"><span class="ct">${TYPE_LABEL[t]}</span><span class="cn">— missing —</span></div>`;}
-function openDoc(key){
-  const d=DOCMAP[key];if(!d)return;
+function groupBlock(g){
+  const cls=!g.complete?'inc':(g.match.status==='MATCHED'?'ok':'exc');
+  const rows=TYPE_ORDER.map(t=>{const d=g.documents.find(x=>x.doc_type===t);return d?docRow(d):missRow(t);}).join('');
+  const cmp=g.complete?`<button class="ghost mini" onclick="openCompare('${g.po_reference}')">⇄ Compare</button>`:'';
+  let note='';
+  if(g.complete&&g.match){
+    const fl=g.match.lines.filter(l=>l.flags.length);
+    note=fl.length
+      ?'<div class="blocknote bad">'+fl.map(l=>`🔍 <b>${l.description}</b> — ${l.flags.map(f=>FLAG_LABEL[f]||f).join(', ')}`).join('<br>')+'</div>'
+      :'<div class="blocknote ok">All '+g.match.lines.length+' lines reconcile — ordered = delivered = billed, prices match.</div>';
+  }
+  return `<div class="setblock ${cls}">
+    <div class="blockhead"><div class="bh-left">${statusPill(g)} <span class="setref">${g.po_reference}</span> <span class="setsup">· ${g.supplier||'—'}</span></div>${cmp}</div>
+    <div class="rows">${rows}</div>${note}</div>`;
+}
+function docRow(d){
+  const view=d.has_file?`<button class="iconbtn" title="View full document" onclick="openFile('${d.key}')">🔍</button>`:`<span class="note" style="font-size:10.5px">no file</span>`;
+  const hov=d.has_file?`onmouseenter="showPrev(event,'${d.key}')" onmouseleave="hidePrev()"`:'';
+  return `<div class="drow" ${hov}>
+    <span class="rtype">${TYPE_LABEL[d.doc_type]||'Document'}</span>
+    <span class="rnum">${d.doc_number||d.filename||''}</span>
+    <span class="rsrc">${srcBadge(d.source)}</span>
+    <span class="rdate">${d.doc_date||''}</span>
+    <span class="rview">${view}</span></div>`;
+}
+function missRow(t){return `<div class="drow miss"><span class="rtype">${TYPE_LABEL[t]}</span><span class="rnum">— missing —</span><span class="rsrc"></span><span class="rdate"></span><span class="rview"></span></div>`;}
+
+let prevTimer=null;
+function showPrev(e,key){clearTimeout(prevTimer);const t=e.currentTarget;prevTimer=setTimeout(()=>_doPrev(t,key),160);}
+function _doPrev(t,key){
+  const p=$('#hover-prev');if(!p||!t)return;
+  const d=DOCMAP[key]||{};const url=fileUrl(key);const isImg=(d.raw_ctype||'').startsWith('image/');
+  p.innerHTML=isImg?`<img src="${url}">`:`<iframe src="${url}#toolbar=0&navpanes=0&view=FitH" frameborder="0"></iframe>`;
+  const r=t.getBoundingClientRect();const pw=262,ph=336,m=14;
+  let left=r.right+m;if(left+pw>window.innerWidth)left=Math.max(8,r.left-pw-m);
+  let top=Math.min(Math.max(r.top,10),window.innerHeight-ph-10);
+  p.style.left=left+'px';p.style.top=top+'px';p.style.display='block';
+}
+function hidePrev(){clearTimeout(prevTimer);const p=$('#hover-prev');if(p){p.style.display='none';p.innerHTML='';}}
+
+function openFile(key){
+  const d=DOCMAP[key];if(!d)return;hidePrev();
+  const url=fileUrl(key);const isImg=(d.raw_ctype||'').startsWith('image/');
   const rows=(d.line_items||[]).map(li=>`<tr><td>${li.description??''}</td><td style="text-align:right">${li.quantity??''}</td><td style="text-align:right">${li.unit_price!=null?eur(li.unit_price):'—'}</td></tr>`).join('');
+  const viewer=d.has_file?(isImg?`<img src="${url}" style="max-width:100%;border:1px solid var(--rule);border-radius:8px">`:`<iframe src="${url}#view=FitH" frameborder="0" class="docframe"></iframe>`):'<div class="note">No file stored for this document.</div>';
   $('#doc-modal-body').innerHTML=`<span class="x" onclick="closeDoc()">✕</span>
     <div class="eyebrow">${TYPE_LABEL[d.doc_type]||'Document'}</div>
     <h3 style="margin-top:4px">${d.doc_number||d.filename||''}</h3>
     <div class="note">${d.supplier_name||''}${d.doc_date?' · '+d.doc_date:''}${d.po_reference?' · order '+d.po_reference:''}</div>
-    <table style="margin-top:14px"><tr><th>Designation</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit price</th></tr>${rows||'<tr><td class="note" colspan="3">No line items extracted.</td></tr>'}</table>
-    ${d.total_incl_vat!=null?'<div style="text-align:right;margin-top:10px"><b>Total TTC '+eur(d.total_incl_vat)+'</b></div>':''}
-    ${d.error?'<div class="err" style="margin-top:12px">Extraction issue: '+d.error+'</div>':''}
-    <div class="note" style="margin-top:14px;font-size:11px">Captured ${d.captured_at||''} · ${d.filename||''}</div>`;
-  $('#doc-modal').classList.add('show');
+    <div class="docview"><div class="docview-pdf">${viewer}</div>
+      <div class="docview-data"><div class="eyebrow" style="margin-bottom:6px">What the AI read</div>
+        <table><tr><th>Designation</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit</th></tr>${rows||'<tr><td class="note" colspan="3">No lines extracted.</td></tr>'}</table>
+        ${d.total_incl_vat!=null?'<div style="text-align:right;margin-top:8px"><b>Total TTC '+eur(d.total_incl_vat)+'</b></div>':''}
+        ${d.error?'<div class="err" style="margin-top:10px">Extraction issue: '+d.error+'</div>':''}
+      </div></div>`;
+  $('#doc-modal-body').classList.add('wide');$('#doc-modal').classList.add('show');
 }
-function closeDoc(){$('#doc-modal').classList.remove('show');}
+function openCompare(ref){
+  const g=(DOCS.groups||[]).find(x=>x.po_reference===ref);if(!g||!g.match)return;hidePrev();
+  const lines=g.match.lines||[];
+  const body=lines.map(l=>{
+    const qmis=(l.qty_ordered!=null&&l.qty_billed!=null&&l.qty_ordered!==l.qty_billed)||(l.qty_received!=null&&l.qty_billed!=null&&l.qty_received!==l.qty_billed);
+    const pmis=l.po_price!=null&&l.inv_price!=null&&Math.abs(l.po_price-l.inv_price)>0.01;
+    return `<tr><td>${l.description??''}</td>
+      <td style="text-align:right">${l.qty_ordered??'—'}</td>
+      <td style="text-align:right">${l.qty_received??'—'}</td>
+      <td style="text-align:right" class="${qmis?'mis':''}">${l.qty_billed??'—'}</td>
+      <td style="text-align:right">${l.po_price!=null?eur(l.po_price):'—'}</td>
+      <td style="text-align:right" class="${pmis?'mis':''}">${l.inv_price!=null?eur(l.inv_price):'—'}</td>
+      <td>${l.flags.length?l.flags.map(f=>FLAG_LABEL[f]||f).join(', '):'<span style="color:var(--green)">ok</span>'}</td></tr>`;
+  }).join('');
+  $('#doc-modal-body').innerHTML=`<span class="x" onclick="closeDoc()">✕</span>
+    <div class="eyebrow">Compare · ${ref}</div>
+    <h3 style="margin-top:4px">${g.supplier||''}</h3>
+    <div class="note">Ordered (purchase order) vs delivered (delivery note) vs billed (invoice), line by line. Mismatches in red.</div>
+    <table class="cmp" style="margin-top:14px"><tr><th>Designation</th><th style="text-align:right">Ordered</th><th style="text-align:right">Delivered</th><th style="text-align:right">Billed</th><th style="text-align:right">PO price</th><th style="text-align:right">Inv price</th><th>Result</th></tr>${body}</table>
+    ${g.match.overpay_eur?'<div style="text-align:right;margin-top:12px"><b class="mis">Overbilled by '+eur(g.match.overpay_eur)+'</b></div>':'<div style="text-align:right;margin-top:12px;color:var(--green)"><b>Everything reconciles</b></div>'}`;
+  $('#doc-modal-body').classList.add('wide');$('#doc-modal').classList.add('show');
+}
+function closeDoc(){$('#doc-modal').classList.remove('show');$('#doc-modal-body').classList.remove('wide');}
 
 /* ---------- nav ---------- */
 $('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;

@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 DATA = Path(os.getenv("DATA_DIR", Path(__file__).resolve().parents[1] / "data"))
 app = FastAPI(title="P2P & Inventory API", version="0.1.0")
@@ -189,6 +190,15 @@ async def documents_upload(file: UploadFile = File(...)):
     content = await file.read()
     docs.ingest_upload(file.filename, content, file.content_type or "")
     return docs.grouped()
+
+@app.get("/api/documents/file")
+def documents_file(key: str):
+    from . import documents as docs
+    item = docs.RAW.get(key)
+    if not item:
+        raise HTTPException(404, "Document file not available")
+    ctype, content = item
+    return Response(content=content, media_type=ctype, headers={"Content-Disposition": "inline"})
 
 @app.get("/api/documents")
 def documents_list():

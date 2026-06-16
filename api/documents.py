@@ -194,6 +194,7 @@ def three_way(docs: list[dict]) -> dict:
 def grouped() -> dict:
     groups, loose = {}, []
     for d in STORE.values():
+        d["has_file"] = d.get("key") in RAW
         ref = _norm(d.get("po_reference"))
         (groups.setdefault(ref, []).append(d) if ref else loose.append(d))
     out = []
