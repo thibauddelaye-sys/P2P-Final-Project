@@ -136,6 +136,11 @@
   .acctfoot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--rule);background:var(--paper3)}
   .acctactions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   button.act.mini{padding:5px 13px;font-size:12.5px}
+  /* --- Goods receipt --- */
+  .cntin{width:74px;padding:4px 7px;border:1px solid var(--rule);border-radius:6px;text-align:right;font-size:12.5px;font-family:inherit;color:var(--ink)}
+  .cntin:focus{outline:none;border-color:var(--gold)}
+  table.rcpt td,table.rcpt th{padding:7px 12px}
+  .rok{color:var(--green)} .rmis{color:var(--red);font-weight:700}
 </style>
 </head>
 <body>
@@ -148,9 +153,8 @@
     <nav id="nav">
       <button class="active" data-p="0"><span class="n">I</span>Reception</button>
       <button data-p="1"><span class="n">II</span>3-Way Match</button>
-      <button data-p="4"><span class="n">III</span>Accounting</button>
-      <button data-p="2"><span class="n">IV</span>Stock &amp; Reorder</button>
-      <button data-p="3"><span class="n">V</span>Scan</button>
+      <button data-p="5"><span class="n">III</span>Goods receipt</button>
+      <button data-p="4"><span class="n">IV</span>Accounting</button>
     </nav>
     <div class="foot"><div id="health">connecting…</div><div style="margin-top:10px;opacity:.85">AI reads,<br>humans decide.</div></div>
   </aside>
@@ -230,6 +234,14 @@
       <div id="acct-empty" class="note" style="margin-top:14px">No invoices captured yet. Capture documents on Reception, then post them here.</div>
       <div id="acct-list"></div>
     </section>
+    <section class="page" data-page="5">
+      <div class="eyebrow">Receiving · count vs delivery note</div>
+      <h1>Goods receipt</h1>
+      <div class="sub">When goods arrive, enter the quantities physically counted against each delivery note. The tool flags any difference versus what the supplier says was delivered — so the receiving control is documented before stock and payment.</div>
+      <div id="rcpt-tiles"></div>
+      <div id="rcpt-empty" class="note" style="margin-top:14px">No delivery notes captured yet. Capture documents on Reception, then count them here.</div>
+      <div id="rcpt-list"></div>
+    </section>
     <div class="modal-bg" id="doc-modal"><div class="modal" id="doc-modal-body"></div></div>
     <div id="hover-prev"></div>
   </main>
@@ -243,7 +255,7 @@ let POS=[];
 async function boot(){
   try{const h=await (await fetch('/health')).json(); $('#health').textContent='live · '+h.invoice_lines+' invoice lines';}
   catch(e){$('#health').textContent='offline';}
-  loadStock(); loadDocuments(); loadAccounting();
+  loadDocuments(); loadAccounting(); loadReceipts();
   document.getElementById('doc-modal').addEventListener('click',e=>{if(e.target.id==='doc-modal')closeDoc();});
   try{POS=await (await fetch('/api/pos')).json();}catch(e){}
 }
@@ -430,11 +442,55 @@ async function postEntry(key){try{const r=await fetch('/api/accounting/post?key=
 async function undoPost(key){try{const r=await fetch('/api/accounting/post?key='+encodeURIComponent(key)+'&undo=true',{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
 
 
+/* ---------- GOODS RECEIPT ---------- */
+let RCPT={deliveries:[],count:0};
+async function loadReceipts(){try{const r=await fetch('/api/receipts');RCPT=await r.json();renderReceipts();}catch(e){}}
+function renderReceipts(){
+  const ds=RCPT.deliveries||[];
+  const pending=ds.filter(d=>d.status==='pending').length, disc=ds.filter(d=>d.status==='discrepancy').length, ok=ds.filter(d=>d.status==='matched').length;
+  $('#rcpt-tiles').innerHTML=`
+    <div class="tile"><div class="lab">Deliveries</div><div class="val">${ds.length}</div></div>
+    <div class="tile alert"><div class="lab">To count</div><div class="val">${pending}</div></div>
+    <div class="tile good"><div class="lab">Checked OK</div><div class="val">${ok}</div></div>
+    <div class="tile alert"><div class="lab">With differences</div><div class="val">${disc}</div></div>`;
+  const empty=$('#rcpt-empty'); if(empty)empty.style.display=ds.length?'none':'block';
+  $('#rcpt-list').innerHTML=ds.map(rcptBlock).join('');
+}
+function rcptStatus(s){
+  if(s==='matched')return '<span class="tag ok">counted · no difference</span>';
+  if(s==='discrepancy')return '<span class="tag bad">difference found</span>';
+  return '<span class="tag warn">to count</span>';
+}
+function rcptBlock(d){
+  const view=d.has_file?`<button class="iconbtn" title="View delivery note" onclick="openFile('${d.key}')">🔍</button>`:'';
+  const rows=d.lines.map(l=>{
+    const cls=l.status==='ok'?'rok':(l.status==='pending'?'':'rmis');
+    const diff=l.diff==null?'—':(l.diff>0?'+'+l.diff:''+l.diff);
+    const chk=l.status==='ok'?'<span style="color:var(--green)">ok</span>':(l.status==='pending'?'<span class="note">—</span>':'<span class="mis">'+(l.status==='short'?'short':'over')+'</span>');
+    return `<tr>
+      <td>${l.description||''}</td>
+      <td style="text-align:right">${l.delivered??'—'}</td>
+      <td style="text-align:right"><input class="cntin" type="number" step="any" data-i="${l.i}" value="${l.counted??''}" placeholder="count"></td>
+      <td style="text-align:right" class="${cls}">${diff}</td>
+      <td>${chk}</td></tr>`;
+  }).join('');
+  return `<div class="acctblock ${d.status==='matched'?'done':''}" data-key="${d.key}">
+    <div class="blockhead"><div class="bh-left">${rcptStatus(d.status)} <span class="setref">${d.doc_number||''}</span> <span class="setsup">· ${d.supplier_name||'—'}${d.doc_date?' · '+d.doc_date:''}</span>${d.po_reference?' <span class="tag">order '+d.po_reference+'</span>':''}</div>${view}</div>
+    <table class="jrn rcpt"><tr><th>Designation</th><th style="text-align:right">Delivered</th><th style="text-align:right">Counted</th><th style="text-align:right">Diff</th><th>Check</th></tr>${rows}</table>
+    <div class="acctfoot"><div class="note">${d.received_at?'Last counted '+d.received_at.slice(0,16).replace('T',' '):'Enter the physically counted quantities, then save.'}</div><div class="acctactions"><button class="act mini" onclick="saveCount('${d.key}')">Save count</button></div></div>
+  </div>`;
+}
+async function saveCount(key){
+  const block=document.querySelector('.acctblock[data-key="'+CSS.escape(key)+'"]'); if(!block)return;
+  const counts={}; block.querySelectorAll('.cntin').forEach(inp=>{if(inp.value!=='')counts[inp.dataset.i]=inp.value;});
+  try{const r=await fetch('/api/receipts/count?key='+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({counts})});RCPT=await r.json();renderReceipts();}catch(e){}
+}
+
 /* ---------- nav ---------- */
 $('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');
   const i=+b.dataset.p;document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',+p.dataset.page===i));
-  if(i!==3)stopScan(); if(i===4)loadAccounting();});
+  if(i===5)loadReceipts(); if(i===4)loadAccounting();});
 
 /* ---------- RECEPTION ---------- */
 const TYPE_BADGE={purchase_order:'Order',delivery_note:'Delivery note',invoice:'Invoice',unknown:'Document'};

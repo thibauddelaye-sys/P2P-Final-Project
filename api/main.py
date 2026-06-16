@@ -7,7 +7,7 @@ from __future__ import annotations
 import base64, json, os
 from pathlib import Path
 import pandas as pd
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -234,6 +234,19 @@ def accounting_post(key: str, undo: bool = False):
     if not docs.mark_posted(key, posted=not undo):
         raise HTTPException(404, "Invoice not found")
     return docs.accounting()
+
+@app.get("/api/receipts")
+def receipts_list():
+    from . import documents as docs
+    return docs.receipts()
+
+@app.post("/api/receipts/count")
+async def receipts_count(key: str, request: Request):
+    from . import documents as docs
+    body = await request.json()
+    if not docs.save_count(key, body.get("counts") or {}):
+        raise HTTPException(404, "Delivery note not found")
+    return docs.receipts()
 
 @app.get("/api/documents")
 def documents_list():

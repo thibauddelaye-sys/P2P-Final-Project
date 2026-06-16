@@ -296,5 +296,40 @@ def mark_posted(key, posted=True):
     d["posted_at"] = dt.datetime.utcnow().isoformat(timespec="seconds") if posted else None
     _save_state(); return True
 
+def receipts():
+    out = []
+    for d in STORE.values():
+        if d.get("doc_type") != "delivery_note": continue
+        counted = d.get("counted") or {}
+        items = d.get("line_items") or []
+        lines = []
+        for i, li in enumerate(items):
+            delivered = li.get("quantity")
+            c = counted.get(str(i))
+            diff = (c - delivered) if (c is not None and delivered is not None) else None
+            st = "pending" if c is None else ("ok" if diff == 0 else ("over" if (diff or 0) > 0 else "short"))
+            lines.append({"i": i, "description": li.get("description"), "delivered": delivered,
+                          "counted": c, "diff": round(diff, 2) if diff is not None else None, "status": st})
+        counted_n = sum(1 for l in lines if l["counted"] is not None)
+        has_diff = any(l["status"] in ("over", "short") for l in lines)
+        status = "pending" if (not items or counted_n < len(items)) else ("discrepancy" if has_diff else "matched")
+        out.append({"key": d["key"], "doc_number": d.get("doc_number"), "supplier_name": d.get("supplier_name"),
+                    "doc_date": d.get("doc_date"), "po_reference": d.get("po_reference"),
+                    "has_file": d.get("key") in RAW, "received_at": d.get("received_at"),
+                    "lines": lines, "status": status})
+    out.sort(key=lambda r: ({"pending": 0, "discrepancy": 1, "matched": 2}.get(r["status"], 0), r.get("doc_date") or ""))
+    return {"deliveries": out, "count": len(out)}
+
+def save_count(key, counts):
+    d = STORE.get(key)
+    if not d or d.get("doc_type") != "delivery_note": return False
+    clean = {}
+    for k, v in (counts or {}).items():
+        try: clean[str(int(k))] = round(float(v), 3)
+        except (TypeError, ValueError): pass
+    d["counted"] = clean
+    d["received_at"] = dt.datetime.utcnow().isoformat(timespec="seconds")
+    _save_state(); return True
+
 # Re-hydrate persisted documents at startup (kept across restarts when STORE_DIR is a volume).
 load()
