@@ -166,7 +166,7 @@ def email_poll():
 @app.post("/api/documents/poll")
 def documents_poll():
     """Capture ALL document types from the mailbox (PO / delivery note / invoice), classify,
-    extract and store them. Re-reads the mailbox and de-dupes, so it is safe to call repeatedly."""
+    extract and store them. Reads only unread mail and marks it read, so each document is captured once; de-dupes as a safety net."""
     host = os.getenv("IMAP_HOST", "imap.gmail.com")
     user, pwd = os.getenv("IMAP_USER"), os.getenv("IMAP_PASSWORD")
     if not (user and pwd):
@@ -175,7 +175,7 @@ def documents_poll():
     from . import documents as docs
     from .email_intake import fetch_invoice_attachments
     try:
-        items = fetch_invoice_attachments(host, user, pwd, only_unseen=False, mark_seen=False)
+        items = fetch_invoice_attachments(host, user, pwd, only_unseen=True, mark_seen=True)
     except imaplib.IMAP4.error as e:
         raise HTTPException(502, f"Mailbox login/read failed: {e}")
     added = docs.ingest(items)
@@ -204,7 +204,7 @@ def documents_sample():
 @app.delete("/api/documents")
 def documents_clear():
     from . import documents as docs
-    docs.STORE.clear()
+    docs.clear()
     return {"cleared": True, **docs.grouped()}
 
 

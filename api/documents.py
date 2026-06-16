@@ -38,6 +38,59 @@ def _ctype(filename, fallback=""):
     if fn.endswith((".jpg", ".jpeg")): return "image/jpeg"
     return fallback or "application/octet-stream"
 
+# ---- persistence (survives restart/redeploy when STORE_DIR points at a Railway volume) ----
+STORE_DIR   = os.getenv("STORE_DIR", "runtime_data")
+STATE_PATH = os.path.join(STORE_DIR, "store.json")
+FILES_DIR  = os.path.join(STORE_DIR, "files")
+
+def _fkey(key): return hashlib.sha1((key or "").encode("utf-8")).hexdigest()
+
+def _save_state():
+    try:
+        os.makedirs(STORE_DIR, exist_ok=True)
+        keep = [d for d in STORE.values() if not str(d.get("key","")).startswith("sample/")]
+        with open(STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump(keep, f, ensure_ascii=False)
+    except Exception as e:
+        print("[persist] save failed:", e)
+
+def _save_raw(key, content_type, content):
+    try:
+        os.makedirs(FILES_DIR, exist_ok=True)
+        with open(os.path.join(FILES_DIR, _fkey(key)), "wb") as f:
+            f.write(content)
+    except Exception as e:
+        print("[persist] raw save failed:", e)
+
+def load():
+    """Re-hydrate STORE (and raw files) from disk at startup."""
+    try:
+        if not os.path.exists(STATE_PATH):
+            return 0
+        with open(STATE_PATH, encoding="utf-8") as f:
+            recs = json.load(f)
+        for doc in recs:
+            STORE[doc["key"]] = doc
+            fp = os.path.join(FILES_DIR, _fkey(doc["key"]))
+            if os.path.exists(fp):
+                with open(fp, "rb") as rf:
+                    RAW[doc["key"]] = (doc.get("raw_ctype", "application/octet-stream"), rf.read())
+        return len(recs)
+    except Exception as e:
+        print("[persist] load failed:", e); return 0
+
+def clear():
+    """Empty the store and delete its persisted files."""
+    STORE.clear(); RAW.clear()
+    try:
+        if os.path.exists(STATE_PATH): os.remove(STATE_PATH)
+        if os.path.isdir(FILES_DIR):
+            for fn in os.listdir(FILES_DIR):
+                try: os.remove(os.path.join(FILES_DIR, fn))
+                except Exception: pass
+    except Exception as e:
+        print("[persist] clear failed:", e)
+
 DOC_PROMPT = (
     "You are an accounts-payable assistant. Classify this supplier document and extract its data. "
     "Return ONLY JSON, no prose, no markdown. Schema: "
@@ -85,7 +138,9 @@ def ingest(items: list[dict], source: str = "email") -> int:
                     "subject":it.get("subject"), "source":source,
                     "expense_type":expense_category(doc.get("line_items")),
                     "captured_at":dt.datetime.utcnow().isoformat(timespec="seconds")})
-        STORE[key] = doc; RAW[key] = (_ctype(it["filename"]), it["content"]); added += 1
+        ct = _ctype(it["filename"]); doc["raw_ctype"] = ct
+        STORE[key] = doc; RAW[key] = (ct, it["content"]); _save_raw(key, ct, it["content"]); added += 1
+    if added: _save_state()
     return added
 
 def ingest_upload(filename: str, content: bytes, content_type: str = "") -> dict:
@@ -100,7 +155,8 @@ def ingest_upload(filename: str, content: bytes, content_type: str = "") -> dict
     doc.update({"key":key, "filename":filename, "from":"manual upload", "subject":None,
                 "source":"manual", "expense_type":expense_category(doc.get("line_items")),
                 "captured_at":dt.datetime.utcnow().isoformat(timespec="seconds")})
-    STORE[key] = doc; RAW[key] = (content_type or _ctype(filename), content)
+    ct = content_type or _ctype(filename); doc["raw_ctype"] = ct
+    STORE[key] = doc; RAW[key] = (ct, content); _save_raw(key, ct, content); _save_state()
     return doc
 
 def _norm(s): return re.sub(r"[^A-Z0-9]", "", (s or "").upper())
@@ -181,3 +237,6 @@ def load_sample():
                   "captured_at":dt.datetime.utcnow().isoformat(timespec="seconds")})
         STORE[d["key"]] = d
     return len(sample)
+
+# Re-hydrate persisted documents at startup (kept across restarts when STORE_DIR is a volume).
+load()
