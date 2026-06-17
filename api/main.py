@@ -294,6 +294,20 @@ def documents_clear():
 
 
 # ---- serve the web cockpit (mounted last so /api/* and /health win) -------
+@app.post("/api/accounting/override")
+async def accounting_override(key: str, request: Request):
+    from . import documents as docs
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    lines = None
+    if isinstance(body, dict) and not body.get("reset"):
+        lines = body.get("lines")
+    docs.set_acct_overrides(key, lines)
+    return docs.accounting()
+
+
 from fastapi.staticfiles import StaticFiles
 WEB = Path(__file__).resolve().parents[1] / "web"
 if WEB.exists():

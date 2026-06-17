@@ -135,6 +135,14 @@
   table.jrn tr.cr td{border-top:2px solid var(--rule)}
   .acctfoot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid var(--rule);background:var(--paper3)}
   .acctactions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  table.jrn td.an{color:var(--ink);font-size:12px;white-space:nowrap}
+  table.jrn .sub{color:var(--muted);font-size:11px;font-weight:400;margin-top:1px}
+  table.jrn td.ac{vertical-align:top}
+  .acctsel{font-size:12px;padding:3px 6px;border:1px solid var(--rule);border-radius:6px;background:var(--card);color:var(--ink);max-width:170px}
+  .acctsel.a-acc{max-width:230px}
+  .muted2{color:var(--muted);font-size:10.5px}
+  .tag.edit{background:rgba(176,122,42,.14);color:var(--amber);border:1px solid var(--amber)}
+  tr.edited td.ac{box-shadow:inset 3px 0 0 var(--amber)}
   button.act.mini{padding:5px 13px;font-size:12.5px}
   /* --- Goods receipt --- */
   .cntin{width:74px;padding:4px 7px;border:1px solid var(--rule);border-radius:6px;text-align:right;font-size:12.5px;font-family:inherit;color:var(--ink)}
@@ -469,7 +477,8 @@ function openCompare(ref){
 function closeDoc(){$('#doc-modal').classList.remove('show');$('#doc-modal-body').classList.remove('wide');}
 
 /* ---------- ACCOUNTING POSTING ---------- */
-let ACCT={invoices:[],count:0};
+let ACCT={invoices:[],count:0,options:{accounts:[],pos:[],services:[],inv:[]}};
+let ACCT_EDIT=null;
 async function loadAccounting(){try{const r=await fetch('/api/accounting');ACCT=await r.json();renderAccounting();}catch(e){}}
 function renderAccounting(){
   const inv=ACCT.invoices||[];
@@ -483,21 +492,83 @@ function renderAccounting(){
   const empty=$('#acct-empty'); if(empty)empty.style.display=inv.length?'none':'block';
   $('#acct-list').innerHTML=inv.map(acctBlock).join('');
 }
+function _optAcc(val){
+  const list=(ACCT.options&&ACCT.options.accounts)||[];let has=false;
+  let o=list.map(a=>{if(a.account===val)has=true;return `<option value="${a.account}"${a.account===val?' selected':''}>${a.account} · ${a.label}</option>`;}).join('');
+  if(!has&&val)o=`<option value="${val}" selected>${val}</option>`+o;
+  return `<select class="acctsel a-acc" onchange="acctAccChange(this)">${o}</select>`;
+}
+function _optVal(cls,val){
+  const src=cls==='a-pos'?'pos':cls==='a-srv'?'services':'inv';
+  const list=(ACCT.options&&ACCT.options[src])||[];let has=false;
+  let o=list.map(x=>{if(x===val)has=true;return `<option${x===val?' selected':''}>${x}</option>`;}).join('');
+  if(!has&&val)o=`<option selected>${val}</option>`+o;
+  return `<select class="acctsel ${cls}">${o}</select>`;
+}
+function _setSel(sel,val){let f=false;[...sel.options].forEach(o=>{o.selected=(o.value===val);if(o.value===val)f=true;});if(!f){const o=document.createElement('option');o.value=val;o.textContent=val;o.selected=true;sel.appendChild(o);}}
+function acctAccChange(sel){
+  const tr=sel.closest('tr');const meta=((ACCT.options&&ACCT.options.accounts)||[]).find(a=>a.account===sel.value);if(!meta)return;
+  const p=tr.querySelector('.a-pos'),s=tr.querySelector('.a-srv'),iv=tr.querySelector('.a-inv');
+  if(p&&meta.pos)_setSel(p,meta.pos);if(s&&meta.services)_setSel(s,meta.services);if(iv&&meta.inv)_setSel(iv,meta.inv);
+}
 function acctBlock(i){
-  const e=i.entry;
-  const drows=e.debits.map(d=>`<tr><td class="da">Debit</td><td class="ac">${d.account}</td><td>${d.label}</td><td style="text-align:right">${eur(d.amount)}</td></tr>`).join('');
-  const crow=`<tr class="cr"><td class="da">Credit</td><td class="ac">${e.credit.account}</td><td>${e.credit.label}</td><td style="text-align:right">${eur(e.credit.amount)}</td></tr>`;
+  const e=i.entry,key=i.key,editing=(ACCT_EDIT===key);
+  const exp=e.lines.filter(l=>l.pos!=null);
+  const vat=e.lines.find(l=>l.debit!=null&&l.pos==null);
+  const sup=e.lines.find(l=>l.credit!=null);
+  const erows=exp.map((l,idx)=>{
+    if(editing){
+      return `<tr data-i="${idx}">
+        <td class="da">Debit</td>
+        <td class="ac">${_optAcc(l.account)}</td>
+        <td>${_optVal('a-pos',l.pos)}</td>
+        <td>${_optVal('a-srv',l.services)}</td>
+        <td>${_optVal('a-inv',l.inv_expl)}</td>
+        <td style="text-align:right">${eur(l.htva)}</td></tr>`;
+    }
+    const tail=l.edited?'<span class="tag edit">edited</span>'
+      :`<span class="muted2">${l.basis==='mot-clé'?'auto':l.basis}${l.pos_conf?' · GL '+Math.round(l.pos_conf*100)+'%':''}</span>`;
+    return `<tr class="${l.edited?'edited':''}">
+      <td class="da">Debit</td>
+      <td class="ac">${l.account}<div class="sub">${l.label}</div></td>
+      <td class="an">${l.pos}</td>
+      <td class="an">${l.services}</td>
+      <td class="an">${l.inv_expl} ${tail}</td>
+      <td style="text-align:right">${eur(l.htva)}</td></tr>`;
+  }).join('');
+  const vrow=vat?`<tr><td class="da">Debit</td><td class="ac">${vat.account}<div class="sub">${vat.label}</div></td><td colspan="3"></td><td style="text-align:right">${eur(vat.debit)}</td></tr>`:'';
+  const srow=sup?`<tr class="cr"><td class="da">Credit</td><td class="ac">${sup.account}<div class="sub">${sup.label}</div></td><td colspan="3"></td><td style="text-align:right">${eur(sup.credit)}</td></tr>`:'';
   const bal=e.balanced?'<span class="tag ok">balanced</span>':'<span class="tag bad">unbalanced</span>';
-  const view=i.has_file?`<button class="iconbtn" title="View invoice" onclick="openFile('${i.key}')">🔍</button>`:'';
   const rate=e.assumed_vat?'assumed 17%':Math.round(e.vat_rate*100)+'%';
-  const act=i.posted
-    ?`<span class="tag ok">✓ posted${i.posted_at?' · '+i.posted_at.slice(0,10):''}</span> <button class="ghost mini" onclick="undoPost('${i.key}')">Undo</button>`
-    :`<button class="act mini" onclick="postEntry('${i.key}')">Post entry</button>`;
-  return `<div class="acctblock ${i.posted?'done':''}">
-    <div class="blockhead"><div class="bh-left"><span class="setref">${i.doc_number||''}</span> <span class="setsup">· ${i.supplier_name||'—'}${i.doc_date?' · '+i.doc_date:''}</span>${i.po_reference?' <span class="tag">order '+i.po_reference+'</span>':''}</div>${view}</div>
-    <table class="jrn"><tr><th>Side</th><th>Account</th><th>Designation</th><th style="text-align:right">${i.currency||'EUR'}</th></tr>${drows}${crow}</table>
+  const view=i.has_file?`<button class="iconbtn" title="View invoice" onclick="openFile('${key}')">🔍</button>`:'';
+  let act;
+  if(editing){
+    act=`<button class="act mini" onclick="acctSaveEdit('${key}')">Save</button> <button class="ghost mini" onclick="acctCancelEdit()">Cancel</button>`;
+  }else{
+    const post=i.posted
+      ?`<span class="tag ok">✓ posted${i.posted_at?' · '+i.posted_at.slice(0,10):''}</span> <button class="ghost mini" onclick="undoPost('${key}')">Undo</button>`
+      :`<button class="act mini" onclick="postEntry('${key}')">Post entry</button>`;
+    const reset=exp.some(l=>l.edited)?` <button class="ghost mini" onclick="acctReset('${key}')">Reset to auto</button>`:'';
+    act=`<button class="ghost mini" onclick="acctStartEdit('${key}')">✎ Edit</button>${reset} ${post}`;
+  }
+  const jrnTag=e.journal?` <span class="tag">journal ${e.journal}</span>`:'';
+  return `<div class="acctblock ${i.posted?'done':''}" data-akey="${key}">
+    <div class="blockhead"><div class="bh-left"><span class="setref">${i.doc_number||''}</span> <span class="setsup">· ${i.supplier_name||'—'}${i.doc_date?' · '+i.doc_date:''}</span>${i.po_reference?' <span class="tag">order '+i.po_reference+'</span>':''}${jrnTag}</div>${view}</div>
+    <table class="jrn"><tr><th>Side</th><th>Account</th><th>Point of sale</th><th>Service</th><th>Inv/Op</th><th style="text-align:right">${i.currency||'EUR'}</th></tr>${erows}${vrow}${srow}</table>
     <div class="acctfoot"><div class="note">Net ${eur(e.net)} · VAT ${eur(e.vat)} (${rate}) · Gross ${eur(e.gross)}</div><div class="acctactions">${bal} ${act}</div></div>
   </div>`;
+}
+function acctStartEdit(key){ACCT_EDIT=key;renderAccounting();}
+function acctCancelEdit(){ACCT_EDIT=null;renderAccounting();}
+async function acctReset(key){try{const r=await fetch('/api/accounting/override?key='+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reset:true})});ACCT=await r.json();ACCT_EDIT=null;renderAccounting();}catch(e){}}
+async function acctSaveEdit(key){
+  const block=document.querySelector('#acct-list .acctblock[data-akey="'+CSS.escape(key)+'"]');if(!block)return;
+  const lines=[];
+  block.querySelectorAll('table.jrn tr[data-i]').forEach(tr=>{
+    const a=tr.querySelector('.a-acc'),p=tr.querySelector('.a-pos'),s=tr.querySelector('.a-srv'),iv=tr.querySelector('.a-inv');
+    lines.push({account:a?a.value:null,pos:p?p.value:null,services:s?s.value:null,inv_expl:iv?iv.value:null});
+  });
+  try{const r=await fetch('/api/accounting/override?key='+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lines})});ACCT=await r.json();ACCT_EDIT=null;renderAccounting();}catch(e){}
 }
 async function postEntry(key){try{const r=await fetch('/api/accounting/post?key='+encodeURIComponent(key),{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
 async function undoPost(key){try{const r=await fetch('/api/accounting/post?key='+encodeURIComponent(key)+'&undo=true',{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}

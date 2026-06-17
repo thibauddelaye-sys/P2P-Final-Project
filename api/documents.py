@@ -315,7 +315,7 @@ def accounting_entry(doc):
             r = rows[k] = {"account": acc, "label": _acc_label(acc), "htva": 0.0,
                            "inv_expl": an["inv_expl"], "pos": an["pos"], "services": an["services"],
                            "pos_conf": an["pos_conf"], "services_conf": an["services_conf"],
-                           "pos_src": an["pos_src"], "basis": basis}
+                           "pos_src": an["pos_src"], "basis": basis, "edited": False}
         r["htva"] = round(r["htva"] + amt, 2)
     net = round(net, 2)
     ttc = doc.get("total_incl_vat")
@@ -325,6 +325,15 @@ def accounting_entry(doc):
         vat = round(net * 0.17, 2); ttc = round(net + vat, 2); assumed = True
     rate = (vat / net) if net else 0.0
     exp = list(rows.values())
+    ov = doc.get("acct_overrides")
+    if isinstance(ov, list) and len(ov) == len(exp):
+        for r, o in zip(exp, ov):
+            if not isinstance(o, dict): continue
+            if o.get("account"): r["account"] = o["account"]; r["label"] = _acc_label(o["account"])
+            if o.get("pos"): r["pos"] = o["pos"]
+            if o.get("services"): r["services"] = o["services"]
+            if o.get("inv_expl"): r["inv_expl"] = o["inv_expl"]
+            r["edited"] = True; r["basis"] = "manuel"
     for r in exp: r["tva"] = round(r["htva"] * rate, 2)
     diff = round(vat - sum(r["tva"] for r in exp), 2)
     if exp and abs(diff) >= 0.01:
@@ -337,7 +346,7 @@ def accounting_entry(doc):
                       "htva": r["htva"], "tva": r["tva"], "inv_expl": r["inv_expl"],
                       "pos": r["pos"], "services": r["services"],
                       "pos_conf": r["pos_conf"], "services_conf": r["services_conf"],
-                      "pos_src": r["pos_src"], "basis": r["basis"]})
+                      "pos_src": r["pos_src"], "basis": r["basis"], "edited": r["edited"]})
     lines.append({"account": va.get("account"), "label": va.get("label"), "debit": vat, "credit": None,
                   "htva": None, "tva": None, "inv_expl": None, "pos": None, "services": None})
     lines.append({"account": pa.get("account"), "label": payable_label, "debit": None, "credit": ttc,
@@ -361,13 +370,31 @@ def accounting():
                     "posted": bool(d.get("posted")), "posted_at": d.get("posted_at"),
                     "entry": accounting_entry(d)})
     out.sort(key=lambda r: (r["posted"], r.get("doc_date") or "", r.get("doc_number") or ""))
-    return {"invoices": out, "count": len(out)}
+    return {"invoices": out, "count": len(out), "options": _acct_options()}
 
 def mark_posted(key, posted=True):
     d = STORE.get(key)
     if not d: return False
     d["posted"] = posted
     d["posted_at"] = dt.datetime.utcnow().isoformat(timespec="seconds") if posted else None
+    _save_state(); return True
+
+def _acct_options():
+    accs = sorted(({"account": a, "label": v.get("label", a), "pos": v.get("pos"),
+                    "services": v.get("services"), "inv": v.get("inv_expl", "EXPLOIT")}
+                   for a, v in LOOKUPS["accounts"].items()), key=lambda x: x["account"])
+    pos = LOOKUPS.get("pos_options") or sorted({v.get("pos") for v in LOOKUPS["accounts"].values() if v.get("pos")})
+    srv = LOOKUPS.get("services_options") or sorted({v.get("services") for v in LOOKUPS["accounts"].values() if v.get("services")})
+    inv = LOOKUPS.get("inv_options") or ["EXPLOIT", "INVEST", "ADM"]
+    return {"accounts": list(accs), "pos": list(pos), "services": list(srv), "inv": list(inv)}
+
+def set_acct_overrides(key, lines):
+    d = STORE.get(key)
+    if not d: return False
+    if lines is None:
+        d.pop("acct_overrides", None)
+    else:
+        d["acct_overrides"] = lines
     _save_state(); return True
 
 def receipts():

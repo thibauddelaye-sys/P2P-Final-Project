@@ -115,5 +115,38 @@
       "inv_expl": "EXPLOIT"
     }
   },
-  "supplier_pos": {}
+  "supplier_pos": {},
+  "pos_options": [
+    "Administration",
+    "Bar",
+    "Banquets",
+    "Brasserie",
+    "Café",
+    "Cave",
+    "Cuisine",
+    "Hébergement",
+    "Housekeeping",
+    "Restaurant",
+    "Room service",
+    "Staff",
+    "Divers"
+  ],
+  "services_options": [
+    "Administration",
+    "Autres",
+    "Boissons",
+    "Charges financières",
+    "Énergie",
+    "Hébergement",
+    "Maintenance",
+    "Marketing",
+    "Nourriture",
+    "Restauration",
+    "Divers"
+  ],
+  "inv_options": [
+    "EXPLOIT",
+    "INVEST",
+    "ADM"
+  ]
 }

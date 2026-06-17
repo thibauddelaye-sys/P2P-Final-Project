@@ -46,6 +46,9 @@ def main(gl_path, chart_path=None):
            "vat_account": {"account": "42161100", "label": "TVA en amont"},
            "payable_account": {"account": "44111000", "label": "Fournisseurs"},
            "journal": "ACH", "fallback_account": "60380000",
+           "pos_options": sorted({v["pos"] for v in accounts.values() if v["pos"]}),
+           "services_options": sorted({v["services"] for v in accounts.values() if v["services"]}),
+           "inv_options": sorted({v["inv_expl"] for v in accounts.values() if v["inv_expl"]}) or ["EXPLOIT"],
            "accounts": accounts, "supplier_pos": supplier_pos}
     os.makedirs("data", exist_ok=True)
     json.dump(out, open("data/gl_lookups.local.json", "w", encoding="utf-8"),
