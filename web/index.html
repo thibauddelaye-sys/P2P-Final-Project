@@ -509,10 +509,12 @@ function closeDoc(){$('#doc-modal').classList.remove('show');$('#doc-modal-body'
 /* ---------- ACCOUNTING POSTING ---------- */
 let ACCT={invoices:[],count:0,options:{accounts:[],pos:[],services:[],inv:[]}};
 let ACCT_EDIT=null;
+let ACCT_VIEW='active';
 async function loadAccounting(){try{const r=await fetch('/api/accounting');ACCT=await r.json();renderAccounting();}catch(e){}}
 function renderAccounting(){
   const inv=ACCT.invoices||[];
-  const toPost=inv.filter(i=>!i.posted).length, posted=inv.length-toPost;
+  const active=inv.filter(i=>!i.archived), arch=inv.filter(i=>i.archived);
+  const toPost=inv.filter(i=>!i.posted).length, posted=inv.filter(i=>i.posted).length;
   const payable=inv.filter(i=>!i.posted).reduce((s,i)=>s+(i.entry.gross||0),0);
   $('#acct-tiles').innerHTML=`
     <div class="tile"><div class="lab">Invoices</div><div class="val">${inv.length}</div></div>
@@ -520,8 +522,13 @@ function renderAccounting(){
     <div class="tile good"><div class="lab">Posted</div><div class="val">${posted}</div></div>
     <div class="tile"><div class="lab">Open payable</div><div class="val" style="font-size:23px">${eur(payable)}</div></div>`;
   const empty=$('#acct-empty'); if(empty)empty.style.display=inv.length?'none':'block';
-  $('#acct-list').innerHTML=inv.map(acctBlock).join('');
+  const seg=`<div class="rcptseg"><button class="${ACCT_VIEW==='active'?'on':''}" onclick="setAcctView('active')">Active (${active.length})</button><button class="${ACCT_VIEW==='archived'?'on':''}" onclick="setAcctView('archived')">Archived (${arch.length})</button></div>`;
+  const list=ACCT_VIEW==='archived'?arch:active;
+  const msg=`<div class="note" style="margin-top:6px">${ACCT_VIEW==='archived'?'No archived entries yet. Post an entry, then use Archive to file it here.':'Nothing here — every entry has been archived.'}</div>`;
+  $('#acct-list').innerHTML=(inv.length?seg:'')+(list.length?list.map(acctBlock).join(''):(inv.length?msg:''));
 }
+function setAcctView(v){ACCT_VIEW=v;renderAccounting();}
+
 function _optAcc(val){
   const list=(ACCT.options&&ACCT.options.accounts)||[];let has=false;
   let o=list.map(a=>{if(a.account===val)has=true;return `<option value="${a.account}"${a.account===val?' selected':''}>${a.account} · ${a.label}</option>`;}).join('');
@@ -578,11 +585,14 @@ function acctBlock(i){
     const post=i.posted
       ?`<span class="tag ok">✓ posted${i.posted_at?' · '+i.posted_at.slice(0,10):''}</span> <button class="ghost mini" onclick="undoPost('${key}')">Undo</button>`
       :`<button class="act mini" onclick="postEntry('${key}')">Post entry</button>`;
+    const arch=i.archived
+      ?`<button class="ghost mini" onclick="archiveEntry('${key}',false)">Unarchive</button>`
+      :(i.posted?`<button class="act mini ghost" onclick="archiveEntry('${key}',true)">Archive</button>`:'');
     const reset=exp.some(l=>l.edited)?` <button class="ghost mini" onclick="acctReset('${key}')">Reset to auto</button>`:'';
-    act=`<button class="ghost mini" onclick="acctStartEdit('${key}')">✎ Edit</button>${reset} ${post}`;
+    act=`<button class="ghost mini" onclick="acctStartEdit('${key}')">✎ Edit</button>${reset} ${post} ${arch}`;
   }
   const jrnTag=e.journal?` <span class="tag">journal ${e.journal}</span>`:'';
-  return `<div class="acctblock ${i.posted?'done':''}" data-akey="${key}">
+  return `<div class="acctblock ${i.posted?'done':''}${i.archived?' archived':''}" data-akey="${key}">
     <div class="blockhead"><div class="bh-left"><span class="setref">${i.doc_number||''}</span> <span class="setsup">· ${i.supplier_name||'—'}${i.doc_date?' · '+i.doc_date:''}</span>${i.po_reference?' <span class="tag">order '+i.po_reference+'</span>':''}${jrnTag}</div>${view}</div>
     <table class="jrn"><tr><th>Side</th><th>Account</th><th>Point of sale</th><th>Service</th><th>Inv/Op</th><th style="text-align:right">${i.currency||'EUR'}</th></tr>${erows}${vrow}${srow}</table>
     <div class="acctfoot"><div class="note">Net ${eur(e.net)} · VAT ${eur(e.vat)} (${rate}) · Gross ${eur(e.gross)}</div><div class="acctactions">${bal} ${act}</div></div>
@@ -602,6 +612,7 @@ async function acctSaveEdit(key){
 }
 async function postEntry(key){try{const r=await fetch('/api/accounting/post?key='+encodeURIComponent(key),{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
 async function undoPost(key){try{const r=await fetch('/api/accounting/post?key='+encodeURIComponent(key)+'&undo=true',{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
+async function archiveEntry(key,on){try{const r=await fetch('/api/accounting/archive?key='+encodeURIComponent(key)+'&undo='+(on?'false':'true'),{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
 
 
 /* ---------- GOODS RECEIPT ---------- */

@@ -235,6 +235,13 @@ def accounting_post(key: str, undo: bool = False):
         raise HTTPException(404, "Invoice not found")
     return docs.accounting()
 
+@app.post("/api/accounting/archive")
+def accounting_archive(key: str, undo: bool = False):
+    from . import documents as docs
+    if not docs.mark_archived(key, not undo):
+        raise HTTPException(404, "Invoice not found")
+    return docs.accounting()
+
 @app.get("/api/receipts")
 def receipts_list():
     from . import documents as docs

@@ -483,7 +483,7 @@ def accounting():
         out.append({"key": d["key"], "doc_number": d.get("doc_number"), "supplier_name": d.get("supplier_name"),
                     "doc_date": d.get("doc_date"), "currency": d.get("currency") or "EUR",
                     "po_reference": d.get("po_reference"), "has_file": d.get("key") in RAW,
-                    "posted": bool(d.get("posted")), "posted_at": d.get("posted_at"),
+                    "posted": bool(d.get("posted")), "posted_at": d.get("posted_at"), "archived": bool(d.get("acct_archived")),
                     "entry": accounting_entry(d)})
     out.sort(key=lambda r: (r["posted"], r.get("doc_date") or "", r.get("doc_number") or ""))
     return {"invoices": out, "count": len(out), "options": _acct_options()}
@@ -493,6 +493,12 @@ def mark_posted(key, posted=True):
     if not d: return False
     d["posted"] = posted
     d["posted_at"] = dt.datetime.utcnow().isoformat(timespec="seconds") if posted else None
+    _save_state(); return True
+
+def mark_archived(key, archived=True):
+    d = STORE.get(key)
+    if not d: return False
+    d["acct_archived"] = archived
     _save_state(); return True
 
 def _acct_options():
