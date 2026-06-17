@@ -276,6 +276,12 @@ def receipts_archive(key: str, undo: bool = False):
         raise HTTPException(404, "Delivery note not found")
     return docs.receipts()
 
+@app.post("/api/receipts/export")
+def receipts_export(scope: str = "new"):
+    from . import documents as docs
+    csv_text, n, fname = docs.export_stock(scope=scope)
+    return {"count": n, "filename": fname, "csv": csv_text, "receipts": docs.receipts()}
+
 @app.get("/api/receipts/dispute.pdf")
 def receipts_dispute(key: str):
     import re as _re

@@ -570,7 +570,7 @@ def receipts():
                     "doc_date": d.get("doc_date"), "po_reference": d.get("po_reference"),
                     "has_file": d.get("key") in RAW, "received_at": d.get("received_at"),
                     "counted_by": d.get("counted_by"), "note": d.get("note"), "attachment": d.get("attachment"),
-                    "archived": bool(d.get("archived")), "supplier_email": _email_of(d.get("from")),
+                    "archived": bool(d.get("archived")), "supplier_email": _email_of(d.get("from")), "stock_exported": bool(d.get("stock_exported")), "stock_exported_at": d.get("stock_exported_at"),
                     "lines": lines, "status": status})
     out.sort(key=lambda r: ({"pending": 0, "discrepancy": 1, "matched": 2}.get(r["status"], 0), r.get("doc_date") or ""))
     return {"deliveries": out, "count": len(out)}
@@ -660,6 +660,39 @@ def _email_of(s):
     if "<" in s and ">" in s:
         s = s[s.find("<") + 1:s.find(">")].strip()
     return s if ("@" in s and " " not in s) else None
+
+def export_stock(scope="new"):
+    """Inventory-ERP CSV of counted goods receipts (stock-in). scope='new' = fully-counted deliveries
+    not yet stock-exported. Marks them and returns (csv_text, count, filename) atomically."""
+    import csv as _csv, io as _io
+    def _full(d):
+        items = d.get("line_items") or []; counted = d.get("counted") or {}
+        return bool(items) and all(counted.get(str(i)) is not None for i in range(len(items)))
+    targets = [d for d in STORE.values()
+               if d.get("doc_type") == "delivery_note" and _full(d)
+               and not (scope == "new" and d.get("stock_exported"))]
+    targets.sort(key=lambda d: (d.get("doc_date") or "", d.get("doc_number") or ""))
+    buf = _io.StringIO(); w = _csv.writer(buf, delimiter=";")
+    w.writerow(["Date r\u00e9ception", "R\u00e9f\u00e9rence BL", "Commande", "Fournisseur", "D\u00e9signation",
+                "Quantit\u00e9 BL", "Quantit\u00e9 re\u00e7ue", "\u00c9cart", "Statut", "Re\u00e7u par"])
+    def g(x): return ("%g" % x) if isinstance(x, (int, float)) else ""
+    for d in targets:
+        items = d.get("line_items") or []; counted = d.get("counted") or {}
+        date = d.get("received_at") or d.get("doc_date") or ""
+        if "T" in date: date = date[:10]
+        ref = d.get("doc_number") or ""; po = d.get("po_reference") or ""
+        sup = d.get("supplier_name") or ""; by = d.get("counted_by") or ""
+        for i, li in enumerate(items):
+            deliv = li.get("quantity"); cnt = counted.get(str(i))
+            diff = (cnt - deliv) if (cnt is not None and deliv is not None) else None
+            st = ("ok" if diff == 0 else ("over" if (diff or 0) > 0 else "short")) if diff is not None else ""
+            ds = (("+" + g(diff)) if (diff or 0) > 0 else g(diff)) if diff is not None else ""
+            w.writerow([date, ref, po, sup, li.get("description") or "", g(deliv), g(cnt), ds, st, by])
+        d["stock_exported"] = True
+        d["stock_exported_at"] = dt.datetime.utcnow().isoformat(timespec="seconds")
+    if targets: _save_state()
+    fname = "stock_in_" + dt.datetime.utcnow().strftime("%Y%m%d_%H%M") + ".csv"
+    return chr(65279) + buf.getvalue(), len(targets), fname
 
 def archive_delivery(key, archived=True):
     d = STORE.get(key)

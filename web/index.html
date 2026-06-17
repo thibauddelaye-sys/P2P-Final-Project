@@ -632,6 +632,17 @@ async function exportJournal(scope){
 /* ---------- GOODS RECEIPT ---------- */
 let RCPT={deliveries:[],count:0};
 async function loadReceipts(){try{const r=await fetch('/api/receipts');RCPT=await r.json();renderReceipts();}catch(e){}}
+async function exportStock(scope){
+  try{
+    const r=await fetch('/api/receipts/export?scope='+(scope||'new'),{method:'POST'});
+    const d=await r.json();
+    if(d.count>0){
+      const blob=new Blob([d.csv],{type:'text/csv;charset=utf-8'});
+      const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=d.filename;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);
+    }else{alert('Aucune réception comptée à exporter (les réceptions déjà exportées ne sont pas réexportées).');}
+    if(d.receipts){RCPT=d.receipts;renderReceipts();}
+  }catch(e){}
+}
 let RCPT_VIEW='active', RCPT_SORT='status', RCPT_Q='';
 function setRcptView(v){RCPT_VIEW=v;renderReceipts();}
 function setRcptSort(v){RCPT_SORT=v;renderReceipts();}
@@ -657,6 +668,7 @@ function renderRcptControls(){
     <div class="rcptseg"><button class="${RCPT_VIEW==='active'?'on':''}" onclick="setRcptView('active')">Active (${active.length})</button><button class="${RCPT_VIEW==='archived'?'on':''}" onclick="setRcptView('archived')">Archived (${arch.length})</button></div>
     <input class="rcptsearch" placeholder="search PO / supplier / date" value="${RCPT_Q.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" oninput="rcptSearch(this.value)">
     <label class="sortlab">Sort <select class="sortsel" onchange="setRcptSort(this.value)"><option value="status"${RCPT_SORT==='status'?' selected':''}>Status</option><option value="supplier"${RCPT_SORT==='supplier'?' selected':''}>Supplier</option><option value="date"${RCPT_SORT==='date'?' selected':''}>Date</option></select></label>
+    <button class="act mini" style="margin-left:auto" title="Exporter en stock-in les réceptions comptées non encore exportées" onclick="exportStock('new')">⬇ Export stock-in (CSV)</button>
   </div>`;
 }
 function renderRcptList(){
@@ -673,6 +685,7 @@ function rcptStatus(s){
 function lastBy(){try{return localStorage.getItem('rcpt_user')||'';}catch(e){return '';}}
 function rcptBlock(d){
   const view=d.has_file?`<button class="iconbtn" title="View delivery note" onclick="openFile('${d.key}')">🔍</button>`:'';
+  const stk=d.stock_exported?` <span class="tag">⬇ stock exported${d.stock_exported_at?' · '+d.stock_exported_at.slice(0,10):''}</span>`:'';
   const rows=d.lines.map(l=>{
     const cls=l.status==='ok'?'rok':(l.status==='pending'?'':'rmis');
     const diff=l.diff==null?'—':(l.diff>0?'+'+l.diff:''+l.diff);
@@ -685,7 +698,7 @@ function rcptBlock(d){
       <td>${chk}</td></tr>`;
   }).join('');
   return `<div class="acctblock ${d.status==='matched'?'done':''}${d.archived?' archived':''}" data-key="${d.key}">
-    <div class="blockhead"><div class="bh-left">${rcptStatus(d.status)} <span class="setref">${d.doc_number||''}</span> <span class="setsup">· ${d.supplier_name||'—'}${d.doc_date?' · '+d.doc_date:''}</span>${d.po_reference?' <span class="tag">order '+d.po_reference+'</span>':''}</div>${view}</div>
+    <div class="blockhead"><div class="bh-left">${rcptStatus(d.status)} <span class="setref">${d.doc_number||''}</span> <span class="setsup">· ${d.supplier_name||'—'}${d.doc_date?' · '+d.doc_date:''}</span>${d.po_reference?' <span class="tag">order '+d.po_reference+'</span>':''}${stk}</div>${view}</div>
     <table class="jrn rcpt"><tr><th>Designation</th><th style="text-align:right">Delivered</th><th style="text-align:right">Counted</th><th style="text-align:right">Diff</th><th>Check</th></tr>${rows}</table>
     ${d.status==='discrepancy'?`<div class="dispute">
       <div class="eyebrow" style="margin:2px 0 5px">Explain the difference</div>
