@@ -175,6 +175,13 @@
   .rcptby{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
   .cntby{width:150px;padding:4px 9px;border:1px solid var(--rule);border-radius:6px;font-family:inherit;font-size:12.5px;color:var(--ink)}
   .cntby:focus{outline:none;border-color:var(--gold)}
+  /* --- receipt search + sort bar --- */
+  .rcptbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:13px}
+  .rcptsearch{flex:1;min-width:180px;padding:6px 11px;border:1px solid var(--rule);border-radius:8px;font-family:inherit;font-size:13px;color:var(--ink)}
+  .rcptsearch:focus{outline:none;border-color:var(--gold)}
+  .sortlab{font-size:12.5px;color:#7a7268;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .sortsel{padding:5px 8px;border:1px solid var(--rule);border-radius:7px;font-family:inherit;font-size:12.5px;color:var(--ink);background:#fff;cursor:pointer}
+  .sortsel:focus{outline:none;border-color:var(--gold)}
 </style>
 </head>
 <body>
@@ -274,6 +281,7 @@
       <div class="sub">When goods arrive, enter the quantities physically counted against each delivery note. The tool flags any difference versus what the supplier says was delivered — so the receiving control is documented before stock and payment.</div>
       <div id="rcpt-tiles"></div>
       <div id="rcpt-empty" class="note" style="margin-top:14px">No delivery notes captured yet. Capture documents on Reception, then count them here.</div>
+      <div id="rcpt-controls"></div>
       <div id="rcpt-list"></div>
     </section>
     <div class="modal-bg" id="doc-modal"><div class="modal" id="doc-modal-body"></div></div>
@@ -498,23 +506,39 @@ async function undoPost(key){try{const r=await fetch('/api/accounting/post?key='
 /* ---------- GOODS RECEIPT ---------- */
 let RCPT={deliveries:[],count:0};
 async function loadReceipts(){try{const r=await fetch('/api/receipts');RCPT=await r.json();renderReceipts();}catch(e){}}
-let RCPT_VIEW='active';
+let RCPT_VIEW='active', RCPT_SORT='status', RCPT_Q='';
 function setRcptView(v){RCPT_VIEW=v;renderReceipts();}
-function renderReceipts(){
-  const all=RCPT.deliveries||[];
-  const active=all.filter(d=>!d.archived), arch=all.filter(d=>d.archived);
+function setRcptSort(v){RCPT_SORT=v;renderReceipts();}
+function rcptSearch(v){RCPT_Q=v||'';renderRcptList();}
+function rcptSets(){const all=RCPT.deliveries||[];return {active:all.filter(d=>!d.archived), arch:all.filter(d=>d.archived)};}
+function matchQ(d){const q=RCPT_Q.toLowerCase().trim(); if(!q)return true; return [(d.supplier_name||''),(d.po_reference||''),(d.doc_number||''),(d.doc_date||'')].join(' ').toLowerCase().includes(q);}
+function sortDeliveries(a){const r=a.slice();
+  if(RCPT_SORT==='supplier')r.sort((x,y)=>(x.supplier_name||'').localeCompare(y.supplier_name||'')||(y.doc_date||'').localeCompare(x.doc_date||''));
+  else if(RCPT_SORT==='date')r.sort((x,y)=>(y.doc_date||'').localeCompare(x.doc_date||''));
+  return r;}
+function renderRcptTiles(){
+  const {active}=rcptSets();
   const pending=active.filter(d=>d.status==='pending').length, disc=active.filter(d=>d.status==='discrepancy').length, ok=active.filter(d=>d.status==='matched').length;
   $('#rcpt-tiles').innerHTML=`
     <div class="tile"><div class="lab">Deliveries</div><div class="val">${active.length}</div></div>
     <div class="tile alert"><div class="lab">To count</div><div class="val">${pending}</div></div>
     <div class="tile good"><div class="lab">Checked OK</div><div class="val">${ok}</div></div>
     <div class="tile alert"><div class="lab">With differences</div><div class="val">${disc}</div></div>`;
-  const empty=$('#rcpt-empty'); if(empty)empty.style.display='none';
-  const list=RCPT_VIEW==='archived'?arch:active;
-  const seg=`<div class="rcptseg"><button class="${RCPT_VIEW==='active'?'on':''}" onclick="setRcptView('active')">Active (${active.length})</button><button class="${RCPT_VIEW==='archived'?'on':''}" onclick="setRcptView('archived')">Archived (${arch.length})</button></div>`;
-  const emptyMsg=list.length?'':`<div class="note" style="margin-top:6px">${RCPT_VIEW==='archived'?'No archived deliveries yet. Use Archive on a checked delivery to file it here.':'No active deliveries. Capture documents on Reception, then count them here.'}</div>`;
-  $('#rcpt-list').innerHTML=seg+list.map(rcptBlock).join('')+emptyMsg;
 }
+function renderRcptControls(){
+  const {active, arch}=rcptSets();
+  $('#rcpt-controls').innerHTML=`<div class="rcptbar">
+    <div class="rcptseg"><button class="${RCPT_VIEW==='active'?'on':''}" onclick="setRcptView('active')">Active (${active.length})</button><button class="${RCPT_VIEW==='archived'?'on':''}" onclick="setRcptView('archived')">Archived (${arch.length})</button></div>
+    <input class="rcptsearch" placeholder="search PO / supplier / date" value="${RCPT_Q.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" oninput="rcptSearch(this.value)">
+    <label class="sortlab">Sort <select class="sortsel" onchange="setRcptSort(this.value)"><option value="status"${RCPT_SORT==='status'?' selected':''}>Status</option><option value="supplier"${RCPT_SORT==='supplier'?' selected':''}>Supplier</option><option value="date"${RCPT_SORT==='date'?' selected':''}>Date</option></select></label>
+  </div>`;
+}
+function renderRcptList(){
+  const s=rcptSets(); let list=(RCPT_VIEW==='archived'?s.arch:s.active).filter(matchQ); list=sortDeliveries(list);
+  const emptyMsg=list.length?'':`<div class="note" style="margin-top:6px">${RCPT_Q.trim()?'No delivery matches your search.':(RCPT_VIEW==='archived'?'No archived deliveries yet. Use Archive on a checked delivery to file it here.':'No active deliveries. Capture documents on Reception, then count them here.')}</div>`;
+  $('#rcpt-list').innerHTML=list.map(rcptBlock).join('')+emptyMsg;
+}
+function renderReceipts(){const e=$('#rcpt-empty'); if(e)e.style.display='none'; renderRcptTiles(); renderRcptControls(); renderRcptList();}
 function rcptStatus(s){
   if(s==='matched')return '<span class="tag ok">counted · no difference</span>';
   if(s==='discrepancy')return '<span class="tag bad">difference found</span>';
@@ -553,26 +577,38 @@ function rcptBlock(d){
 async function archiveDelivery(key,on){
   try{const r=await fetch('/api/receipts/archive?key='+encodeURIComponent(key)+'&undo='+(on?'false':'true'),{method:'POST'});RCPT=await r.json();renderReceipts();}catch(e){}
 }
-let MAIL_SUBJ='', MAIL_BODY='', MAIL_TO='';
-function emailSupplier(key){
-  const d=(RCPT.deliveries||[]).find(x=>x.key===key); if(!d)return;
+let MAIL_SUBJ='', MAIL_BODY='', MAIL_TO='', MAIL_KEY='', MAIL_LANG='fr';
+function buildMail(d,lang){
   const disc=(d.lines||[]).filter(l=>l.status==='short'||l.status==='over');
-  const lines=disc.map(l=>'- '+l.description+': livre '+l.delivered+', compte '+l.counted+' (ecart '+(l.diff>0?'+':'')+l.diff+')').join('\n');
   const by=(d.counted_by||'').trim();
-  MAIL_SUBJ='Ecart de livraison - BL '+(d.doc_number||'');
-  MAIL_BODY='Bonjour,\n\nLors du controle de reception du bon de livraison '+(d.doc_number||'')+(d.po_reference?' (commande '+d.po_reference+')':'')+', nous avons constate les ecarts suivants :\n\n'+lines+'\n'+(d.note?'\nExplication : '+d.note+'\n':'')+'\nLe constat detaille est joint en PDF (avec la photo).\n\nCordialement,\n'+(by||'')+'\nMaison Lumiere';
-  MAIL_TO=d.supplier_email||'';
+  if(lang==='en'){
+    const lines=disc.map(l=>'- '+l.description+': delivered '+l.delivered+', counted '+l.counted+' (diff '+(l.diff>0?'+':'')+l.diff+')').join('\n');
+    return {subj:'Delivery discrepancy - DN '+(d.doc_number||''),
+      body:'Hello,\n\nDuring the goods-receipt check of delivery note '+(d.doc_number||'')+(d.po_reference?' (order '+d.po_reference+')':'')+', we found the following discrepancies:\n\n'+lines+'\n'+(d.note?'\nNote: '+d.note+'\n':'')+'\nThe detailed dispute report is attached as a PDF (including the photo).\n\nBest regards,\n'+(by||'')+'\nMaison Lumiere'};
+  }
+  const lines=disc.map(l=>'- '+l.description+': livre '+l.delivered+', compte '+l.counted+' (ecart '+(l.diff>0?'+':'')+l.diff+')').join('\n');
+  return {subj:'Ecart de livraison - BL '+(d.doc_number||''),
+    body:'Bonjour,\n\nLors du controle de reception du bon de livraison '+(d.doc_number||'')+(d.po_reference?' (commande '+d.po_reference+')':'')+', nous avons constate les ecarts suivants :\n\n'+lines+'\n'+(d.note?'\nExplication : '+d.note+'\n':'')+'\nLe constat detaille est joint en PDF (avec la photo).\n\nCordialement,\n'+(by||'')+'\nMaison Lumiere'};
+}
+function emailSupplier(key){ MAIL_KEY=key; try{MAIL_LANG=localStorage.getItem('mail_lang')||MAIL_LANG;}catch(e){} renderMail(); }
+function setMailLang(l){ MAIL_LANG=l; try{localStorage.setItem('mail_lang',l);}catch(e){} renderMail(); }
+function renderMail(){
+  const d=(RCPT.deliveries||[]).find(x=>x.key===MAIL_KEY); if(!d)return;
+  const m=buildMail(d,MAIL_LANG); MAIL_SUBJ=m.subj; MAIL_BODY=m.body; MAIL_TO=d.supplier_email||'';
   const mailto='mailto:'+MAIL_TO+'?subject='+encodeURIComponent(MAIL_SUBJ)+'&body='+encodeURIComponent(MAIL_BODY);
+  const noMail=MAIL_LANG==='en'?'no supplier email on file \u2014 add it in your mail app':'aucun email fournisseur enregistre \u2014 a ajouter dans votre messagerie';
+  const tip=MAIL_LANG==='en'?'Tip: click <b>Copy email text</b>, paste it into your email (Gmail, Outlook\u2026) and attach the downloaded <b>Dispute PDF</b> \u2014 email drafts cannot carry attachments.':'Astuce : cliquez <b>Copy email text</b>, collez dans votre messagerie (Gmail, Outlook\u2026) et joignez le <b>Dispute PDF</b> telecharge \u2014 un brouillon ne peut pas porter de piece jointe.';
   $('#doc-modal-body').innerHTML=`<span class="x" onclick="closeDoc()">\u2715</span>
     <div class="eyebrow">Email to supplier</div>
+    <div class="rcptseg" style="margin:6px 0 4px"><button class="${MAIL_LANG==='fr'?'on':''}" onclick="setMailLang('fr')">Francais</button><button class="${MAIL_LANG==='en'?'on':''}" onclick="setMailLang('en')">English</button></div>
     <h3 style="margin-top:4px">${MAIL_SUBJ}</h3>
-    <div class="note" style="margin:2px 0 10px">To: ${MAIL_TO?MAIL_TO:'<i>no supplier email on file for this delivery \u2014 add it in your mail app</i>'}</div>
+    <div class="note" style="margin:2px 0 10px">To: ${MAIL_TO?MAIL_TO:'<i>'+noMail+'</i>'}</div>
     <textarea id="mailbody" class="maildraft">${MAIL_BODY.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea>
     <div class="acctactions" style="margin-top:10px">
       <button id="copybtn" class="act mini" onclick="copyMail()">Copy email text</button>
       <a class="act mini ghost" href="${mailto}">Open in mail app</a>
     </div>
-    <div class="note" style="margin-top:10px">Tip: click <b>Copy email text</b>, paste it into your email (Gmail, Outlook\u2026) and attach the downloaded <b>Dispute PDF</b> \u2014 email drafts can't carry attachments.</div>`;
+    <div class="note" style="margin-top:10px">${tip}</div>`;
   $('#doc-modal-body').classList.remove('wide');
   $('#doc-modal').classList.add('show');
 }
