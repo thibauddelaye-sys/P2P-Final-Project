@@ -1,0 +1,12 @@
+{
+  "60101300": ["crémant","cremant","champagne","vin ","vins","riesling","pinot","chardonnay","sauvignon","merlot","bordeaux","bourgogne","prosecco","rosé","rose ","blanc","rouge"],
+  "60101400": ["cognac","whisky","whiskey","gin","vodka","rhum","rum","liqueur","spiritueux","armagnac","tequila","pastis","vermouth","aperitif","apéritif","calvados"],
+  "60101200": ["bière","biere","beer","pils","lager","ipa","ale "],
+  "60101100": ["jus","soda","eau ","eaux","cola","coca","tonic","limonade","sirop","schweppes","perrier","pellegrino","orange","soft"],
+  "60101500": ["café","cafe","espresso","expresso","capsule","thé","the ","infusion"],
+  "60100100": ["beurre","saumon","viande","boeuf","bœuf","poulet","poisson","légume","legume","fruit","fromage","pain","farine","oeuf","œuf","lait","crème","creme","aliment","épice","epice","huile","sucre","riz","pâtes","pates","foie","gras","food"],
+  "60320200": ["nettoyage","dégraissant","degraissant","détergent","detergent","savon","désinfect","desinfect","hygiène","hygiene","javel","lessive","essuie","entretien"],
+  "60331300": ["consommable cuisine","film alimentaire","papier cuisson","aluminium","gant"],
+  "60380100": ["accueil","amenit","shampoing","gel douche","chausson","peignoir","savonnette"],
+  "60350100": ["bureau","papeterie","stylo","cartouche","enveloppe","classeur","toner"]
+}

@@ -1,0 +1,119 @@
+{
+  "_note": "PUBLIC DEMO lookup with generic labels + pseudonymised cost centres. For a private instance, run build_gl_lookups.py on your real GL to produce data/gl_lookups.local.json (real codes, used preferentially).",
+  "vat_account": {
+    "account": "42161100",
+    "label": "TVA en amont"
+  },
+  "payable_account": {
+    "account": "44111000",
+    "label": "Fournisseurs"
+  },
+  "journal": "ACH",
+  "accounts": {
+    "60100100": {
+      "label": "Achats Food",
+      "services": "Nourriture",
+      "services_conf": 1.0,
+      "pos": "Brasserie",
+      "pos_conf": 0.68,
+      "inv_expl": "EXPLOIT"
+    },
+    "60101100": {
+      "label": "Achats Boissons sans alcool",
+      "services": "Boissons",
+      "services_conf": 1.0,
+      "pos": "Cave",
+      "pos_conf": 0.98,
+      "inv_expl": "EXPLOIT"
+    },
+    "60101200": {
+      "label": "Achats Bières",
+      "services": "Boissons",
+      "services_conf": 1.0,
+      "pos": "Cave",
+      "pos_conf": 1.0,
+      "inv_expl": "EXPLOIT"
+    },
+    "60101300": {
+      "label": "Achats Vins & Champagne",
+      "services": "Boissons",
+      "services_conf": 1.0,
+      "pos": "Cave",
+      "pos_conf": 1.0,
+      "inv_expl": "EXPLOIT"
+    },
+    "60101400": {
+      "label": "Achats Spiritueux",
+      "services": "Boissons",
+      "services_conf": 1.0,
+      "pos": "Cave",
+      "pos_conf": 1.0,
+      "inv_expl": "EXPLOIT"
+    },
+    "60101500": {
+      "label": "Achats Cafétéria",
+      "services": "Nourriture",
+      "services_conf": 1.0,
+      "pos": "Cave",
+      "pos_conf": 0.93,
+      "inv_expl": "EXPLOIT"
+    },
+    "60320200": {
+      "label": "Produits de nettoyage",
+      "services": "Restauration",
+      "services_conf": 0.86,
+      "pos": "Cuisine",
+      "pos_conf": 0.83,
+      "inv_expl": "EXPLOIT"
+    },
+    "60331300": {
+      "label": "Consommables cuisine",
+      "services": "Restauration",
+      "services_conf": 1.0,
+      "pos": "Cuisine",
+      "pos_conf": 1.0,
+      "inv_expl": "EXPLOIT"
+    },
+    "60380100": {
+      "label": "Produits d'accueil",
+      "services": "Hébergement",
+      "services_conf": 0.9,
+      "pos": "Hébergement",
+      "pos_conf": 0.9,
+      "inv_expl": "EXPLOIT"
+    },
+    "60350100": {
+      "label": "Fournitures de bureau",
+      "services": "Administration",
+      "services_conf": 1.0,
+      "pos": "Administration",
+      "pos_conf": 1.0,
+      "inv_expl": "EXPLOIT"
+    },
+    "61210001": {
+      "label": "Contrats de maintenance",
+      "services": "Administration",
+      "services_conf": 0.35,
+      "pos": "Administration",
+      "pos_conf": 0.76,
+      "inv_expl": "EXPLOIT"
+    },
+    "61532000": {
+      "label": "Télécommunications",
+      "services": "Administration",
+      "services_conf": 0.25,
+      "pos": "Administration",
+      "pos_conf": 0.78,
+      "inv_expl": "EXPLOIT"
+    },
+    "60380000": {
+      "label": "Autres fournitures consommables",
+      "services": "Marketing",
+      "services_conf": 0.5,
+      "pos": "Cuisine",
+      "pos_conf": 0.33,
+      "inv_expl": "EXPLOIT"
+    }
+  },
+  "supplier_pos": {}
+}

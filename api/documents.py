@@ -245,42 +245,111 @@ def load_sample():
     return len(sample)
 
 # ---- accounting: propose a double-entry journal for each invoice ----
-GL_RULES = [
-    (re.compile(r"wine|champagne|cr[\u00e9e]mant|riesling|pinot", re.I), ("6022", "Beverages \u2014 wine")),
-    (re.compile(r"spirit|cognac|whisky|malt|gin|vodka|rum", re.I),        ("6022", "Beverages \u2014 spirits")),
-    (re.compile(r"beer|lager|ipa|pils|bi[\u00e8e]re", re.I),             ("6022", "Beverages \u2014 beer")),
-    (re.compile(r"water|tonic|cola|juice|jus|orange|soft", re.I),         ("6023", "Beverages \u2014 soft")),
-    (re.compile(r"coffee|caf[\u00e9e]|espresso|bean", re.I),             ("6024", "F&B \u2014 coffee")),
-    (re.compile(r"food|butter|beurre|salmon|saumon|foie|gras|cheese|fromage|meat|viande|fish|poisson|bread|pain", re.I), ("6021", "Food purchases")),
-    (re.compile(r"clean|d[\u00e9e]graissant|entretien|detergent|hygi[\u00e8e]n|savon|nettoy", re.I), ("6063", "Cleaning & consumables")),
-]
+# --- GL-learned imputation (real accounts + analytics) -------------------
+_DATA = os.getenv("DATA_DIR") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+
+def _load_lookups():
+    for fn in ("gl_lookups.local.json", "gl_lookups.json"):
+        p = os.path.join(_DATA, fn)
+        if os.path.exists(p):
+            try:
+                d = json.load(open(p, encoding="utf-8"))
+            except Exception:
+                continue
+            d.setdefault("accounts", {}); d.setdefault("supplier_pos", {})
+            d.setdefault("vat_account", {"account": "42161100", "label": "TVA en amont"})
+            d.setdefault("payable_account", {"account": "44111000", "label": "Fournisseurs"})
+            d.setdefault("journal", "ACH"); d.setdefault("fallback_account", "60380000")
+            return d
+    return {"accounts": {}, "supplier_pos": {},
+            "vat_account": {"account": "42161100", "label": "TVA en amont"},
+            "payable_account": {"account": "44111000", "label": "Fournisseurs"},
+            "journal": "ACH", "fallback_account": "60380000"}
+
+def _load_keywords():
+    p = os.path.join(_DATA, "account_keywords.json")
+    try:
+        return json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return {}
+
+LOOKUPS = _load_lookups()
+KEYWORDS = _load_keywords()
+
+def _acc_label(acc):
+    a = LOOKUPS["accounts"].get(acc)
+    return a["label"] if a and a.get("label") else acc
+
+def analytics_for(account, supplier=None):
+    a = LOOKUPS["accounts"].get(account, {})
+    pos = a.get("pos") or "\u2014"; services = a.get("services") or "\u2014"
+    pc = a.get("pos_conf", 0); sc = a.get("services_conf", 0)
+    inv = a.get("inv_expl") or "EXPLOIT"
+    sp = LOOKUPS.get("supplier_pos", {}).get(supplier or "")
+    src = "compte"
+    if sp:
+        pos = sp.get("pos", pos); pc = sp.get("pos_conf", pc); src = "fournisseur"
+    return {"services": services, "pos": pos, "inv_expl": inv,
+            "services_conf": sc, "pos_conf": pc, "pos_src": src}
+
 def gl_account(desc):
-    x = desc or ""
-    for rx, acc in GL_RULES:
-        if rx.search(x): return acc
-    return ("6028", "Other F&B")
+    d = (desc or "").lower()
+    for acc, kws in KEYWORDS.items():
+        for kw in kws:
+            if kw and kw in d:
+                return acc, "mot-cl\u00e9"
+    return LOOKUPS.get("fallback_account", "60380000"), "d\u00e9faut"
 
 def accounting_entry(doc):
-    by_acc, net = {}, 0.0
+    supplier = doc.get("supplier_name") or ""
+    rows, net = {}, 0.0
     for li in (doc.get("line_items") or []):
         u = li.get("unit_price")
         if u is None: continue
         amt = round((li.get("quantity") or 0) * u, 2); net += amt
-        acc = gl_account(li.get("description"))
-        by_acc[acc] = round(by_acc.get(acc, 0.0) + amt, 2)
+        acc, basis = gl_account(li.get("description"))
+        an = analytics_for(acc, supplier)
+        k = (acc, an["pos"], an["services"])
+        r = rows.get(k)
+        if not r:
+            r = rows[k] = {"account": acc, "label": _acc_label(acc), "htva": 0.0,
+                           "inv_expl": an["inv_expl"], "pos": an["pos"], "services": an["services"],
+                           "pos_conf": an["pos_conf"], "services_conf": an["services_conf"],
+                           "pos_src": an["pos_src"], "basis": basis}
+        r["htva"] = round(r["htva"] + amt, 2)
     net = round(net, 2)
     ttc = doc.get("total_incl_vat")
     if ttc and ttc > net + 0.01:
         vat = round(ttc - net, 2); assumed = False
     else:
         vat = round(net * 0.17, 2); ttc = round(net + vat, 2); assumed = True
-    debits = [{"account": c, "label": l, "amount": a} for (c, l), a in sorted(by_acc.items())]
-    debits.append({"account": "44566", "label": "Input VAT", "amount": vat})
-    credit = {"account": "4011", "label": "Accounts payable \u2014 " + (doc.get("supplier_name") or "supplier"), "amount": ttc}
+    rate = (vat / net) if net else 0.0
+    exp = list(rows.values())
+    for r in exp: r["tva"] = round(r["htva"] * rate, 2)
+    diff = round(vat - sum(r["tva"] for r in exp), 2)
+    if exp and abs(diff) >= 0.01:
+        big = max(exp, key=lambda r: r["htva"]); big["tva"] = round(big["tva"] + diff, 2)
+    va = LOOKUPS["vat_account"]; pa = LOOKUPS["payable_account"]
+    payable_label = pa.get("label", "Fournisseurs") + " \u2014 " + (supplier or "supplier")
+    lines = []
+    for r in exp:
+        lines.append({"account": r["account"], "label": r["label"], "debit": r["htva"], "credit": None,
+                      "htva": r["htva"], "tva": r["tva"], "inv_expl": r["inv_expl"],
+                      "pos": r["pos"], "services": r["services"],
+                      "pos_conf": r["pos_conf"], "services_conf": r["services_conf"],
+                      "pos_src": r["pos_src"], "basis": r["basis"]})
+    lines.append({"account": va.get("account"), "label": va.get("label"), "debit": vat, "credit": None,
+                  "htva": None, "tva": None, "inv_expl": None, "pos": None, "services": None})
+    lines.append({"account": pa.get("account"), "label": payable_label, "debit": None, "credit": ttc,
+                  "htva": None, "tva": None, "inv_expl": None, "pos": None, "services": None})
+    debits = [{"account": r["account"], "label": r["label"], "amount": r["htva"]} for r in exp]
+    debits.append({"account": va.get("account"), "label": va.get("label"), "amount": vat})
+    credit = {"account": pa.get("account"), "label": payable_label, "amount": ttc}
     total_debit = round(sum(d["amount"] for d in debits), 2)
-    return {"debits": debits, "credit": credit, "net": net, "vat": vat,
-            "vat_rate": round(vat/net, 4) if net else 0.0, "gross": ttc,
-            "assumed_vat": assumed, "balanced": abs(total_debit - ttc) < 0.01}
+    return {"lines": lines, "journal": LOOKUPS.get("journal", "ACH"),
+            "debits": debits, "credit": credit, "net": net, "vat": vat,
+            "vat_rate": round(rate, 4), "gross": ttc, "assumed_vat": assumed,
+            "balanced": abs(total_debit - ttc) < 0.01}
 
 def accounting():
     out = []
