@@ -286,6 +286,12 @@ def documents_sample():
     docs.load_sample()
     return docs.grouped()
 
+@app.delete("/api/documents/item")
+def documents_delete_item(key: str):
+    from . import documents as docs
+    docs.delete_doc(key)
+    return docs.grouped()
+
 @app.delete("/api/documents")
 def documents_clear():
     from . import documents as docs

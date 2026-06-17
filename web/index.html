@@ -112,6 +112,10 @@
   .blocknote.ok{color:var(--green)} .blocknote.bad{color:var(--ink)}
   .iconbtn{background:none;border:1px solid var(--rule);border-radius:7px;padding:2px 8px;cursor:pointer;font-size:14px;line-height:1.25}
   .iconbtn:hover{border-color:var(--gold);background:var(--card)}
+.rdel{flex:0 0 26px;text-align:right}
+.iconbtn.del{border-color:transparent;color:var(--muted);padding:2px 6px;opacity:0;transition:opacity .12s}
+.drow:hover .iconbtn.del{opacity:1}
+.iconbtn.del:hover{border-color:var(--red);color:var(--red);background:var(--card)}
   button.mini{padding:5px 12px;font-size:12.5px}
   #hover-prev{position:fixed;display:none;width:304px;background:#fff;border:1px solid var(--rule);border-radius:9px;box-shadow:0 16px 44px rgba(0,0,0,.30);overflow:hidden;z-index:60}
   .prevwrap{position:relative;cursor:crosshair;line-height:0}
@@ -328,6 +332,10 @@ async function pollDocuments(){
   }catch(e){st.innerHTML='<div class="err">Network error: '+e+'</div>';}
 }
 async function sampleDocuments(){const r=await fetch('/api/documents/sample',{method:'POST'});DOCS=await r.json();$('#doc-status').innerHTML='<span class="note">Sample set loaded.</span>';renderAll();}
+async function delDoc(key){
+  if(!confirm('Supprimer ce document ? Cette action est définitive.'))return;
+  try{const r=await fetch('/api/documents/item?key='+encodeURIComponent(key),{method:'DELETE'});DOCS=await r.json();renderAll();}catch(e){}
+}
 async function clearDocuments(){const r=await fetch('/api/documents',{method:'DELETE'});DOCS=await r.json();$('#doc-status').innerHTML='<span class="note">Cleared.</span>';renderAll();}
 
 function fileUrl(key){return '/api/documents/file?key='+encodeURIComponent(key);}
@@ -363,7 +371,8 @@ function directRow(it){
     <span class="rnum">${it.doc_number||''} <span class="note" style="font-weight:400">· ${it.supplier_name||''}</span></span>
     <span class="rsrc note" style="font-size:11.5px">${acc}</span>
     <span class="rdate">${it.gross!=null?eur(it.gross):''}</span>
-    <span class="rview">${view}</span></div>`;
+    <span class="rview">${view}</span>
+    <span class="rdel"><button class="iconbtn del" title="Supprimer ce document" onclick="delDoc('${it.key}')">✕</button></span></div>`;
 }
 
 function statusPill(g){
@@ -394,7 +403,8 @@ function docRow(d){
     <span class="rnum">${d.doc_number||d.filename||''}</span>
     <span class="rsrc">${srcBadge(d.source)}</span>
     <span class="rdate">${d.doc_date||''}</span>
-    <span class="rview">${view}</span></div>`;
+    <span class="rview">${view}</span>
+    <span class="rdel"><button class="iconbtn del" title="Supprimer ce document" onclick="delDoc('${d.key}')">✕</button></span></div>`;
 }
 function missRow(t){return `<div class="drow miss"><span class="rtype">${TYPE_LABEL[t]}</span><span class="rnum">— missing —</span><span class="rsrc"></span><span class="rdate"></span><span class="rview"></span></div>`;}
 

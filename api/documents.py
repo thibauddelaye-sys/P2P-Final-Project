@@ -84,6 +84,19 @@ def load():
     except Exception as e:
         print("[persist] load failed:", e); return 0
 
+def delete_doc(key):
+    """Remove a single document from the store and its persisted files."""
+    if key not in STORE and key not in RAW:
+        return False
+    STORE.pop(key, None); RAW.pop(key, None); RAW.pop("attach::" + key, None)
+    try:
+        for k in (key, "attach::" + key):
+            fp = os.path.join(FILES_DIR, _fkey(k))
+            if os.path.exists(fp): os.remove(fp)
+    except Exception as e:
+        print("[persist] delete_doc failed:", e)
+    _save_state(); return True
+
 def clear():
     """Empty the store and delete its persisted files."""
     STORE.clear(); RAW.clear()
@@ -196,10 +209,26 @@ def three_way(docs: list[dict]) -> dict:
     return {"lines": lines, "status": "MATCHED" if exc==0 else "EXCEPTION",
             "exceptions": exc, "overpay_eur": round(overpay,2)}
 
+def _inv_item(d, cl, orphan=False):
+    e = accounting_entry(d); l0 = e["lines"][0] if e.get("lines") else {}
+    it = {"key": d["key"], "doc_type": "invoice", "doc_number": d.get("doc_number"),
+          "supplier_name": d.get("supplier_name"), "doc_date": d.get("doc_date"),
+          "po_reference": d.get("po_reference"), "filename": d.get("filename"),
+          "line_items": d.get("line_items"), "total_incl_vat": d.get("total_incl_vat"),
+          "error": d.get("error"), "has_file": d.get("has_file"), "source": d.get("source"),
+          "flow": cl["flow"], "requires_po": cl["requires_po"], "basis": cl["basis"],
+          "gross": e.get("gross"), "account": l0.get("account"), "account_label": l0.get("label")}
+    if orphan: it["orphan_doc"] = True
+    return it
+
 def grouped() -> dict:
-    groups, loose = {}, []
+    groups, loose, direct = {}, [], []
     for d in STORE.values():
         d["has_file"] = d.get("key") in RAW
+        if d.get("doc_type") == "invoice":
+            cl = classify_invoice(d)
+            if cl["flow"] == "overhead":
+                direct.append(_inv_item(d, cl)); continue   # direct expense: no PO needed, even if one is cited
         ref = _norm(d.get("po_reference"))
         (groups.setdefault(ref, []).append(d) if ref else loose.append(d))
     out = []
@@ -210,20 +239,10 @@ def grouped() -> dict:
                     "supplier": next((d.get("supplier_name") for d in docs if d.get("supplier_name")), None),
                     "documents": docs, "present": sorted(t for t in types if t),
                     "complete": complete, "match": three_way(docs) if complete else None})
-    direct, orphans = [], []
+    orphans = []
     for d in loose:
         if d.get("doc_type") == "invoice":
-            cl = classify_invoice(d)
-            e = accounting_entry(d)
-            l0 = e["lines"][0] if e.get("lines") else {}
-            item = {"key": d["key"], "doc_type": "invoice", "doc_number": d.get("doc_number"),
-                    "supplier_name": d.get("supplier_name"), "doc_date": d.get("doc_date"),
-                    "po_reference": d.get("po_reference"), "filename": d.get("filename"),
-                    "line_items": d.get("line_items"), "total_incl_vat": d.get("total_incl_vat"),
-                    "error": d.get("error"), "has_file": d.get("has_file"), "source": d.get("source"),
-                    "flow": cl["flow"], "requires_po": cl["requires_po"], "basis": cl["basis"],
-                    "gross": e.get("gross"), "account": l0.get("account"), "account_label": l0.get("label")}
-            (direct if cl["flow"] == "overhead" else orphans).append(item)
+            orphans.append(_inv_item(d, classify_invoice(d), orphan=True))
         else:
             orphans.append({"key": d["key"], "doc_type": d.get("doc_type"), "doc_number": d.get("doc_number"),
                             "supplier_name": d.get("supplier_name"), "doc_date": d.get("doc_date"),
