@@ -483,7 +483,7 @@ def accounting():
         out.append({"key": d["key"], "doc_number": d.get("doc_number"), "supplier_name": d.get("supplier_name"),
                     "doc_date": d.get("doc_date"), "currency": d.get("currency") or "EUR",
                     "po_reference": d.get("po_reference"), "has_file": d.get("key") in RAW,
-                    "posted": bool(d.get("posted")), "posted_at": d.get("posted_at"), "archived": bool(d.get("acct_archived")),
+                    "posted": bool(d.get("posted")), "posted_at": d.get("posted_at"), "archived": bool(d.get("acct_archived")), "exported": bool(d.get("exported")), "exported_at": d.get("exported_at"),
                     "entry": accounting_entry(d)})
     out.sort(key=lambda r: (r["posted"], r.get("doc_date") or "", r.get("doc_number") or ""))
     return {"invoices": out, "count": len(out), "options": _acct_options()}
@@ -500,6 +500,36 @@ def mark_archived(key, archived=True):
     if not d: return False
     d["acct_archived"] = archived
     _save_state(); return True
+
+def export_journal(scope="new"):
+    """Build a GL-ready CSV of posted entries (ACH journal). scope='new' = posted & not yet exported.
+    Marks the exported entries and returns (csv_text, count, filename) atomically."""
+    import csv as _csv, io as _io
+    targets = [d for d in STORE.values()
+               if d.get("doc_type") == "invoice" and d.get("posted")
+               and not (scope == "new" and d.get("exported"))]
+    targets.sort(key=lambda d: (d.get("doc_date") or "", d.get("doc_number") or ""))
+    buf = _io.StringIO(); w = _csv.writer(buf, delimiter=";")
+    w.writerow(["Journal", "Date", "Compte", "Libell\u00e9", "R\u00e9f\u00e9rence tiers", "D\u00e9bit", "Cr\u00e9dit",
+                "Base HTVA", "Montant TVA", "INVEST/EXPLOITATION", "POINT DE VENTE", "SERVICES", "Pi\u00e8ce"])
+    def n(x): return ("%0.2f" % x).replace(".", ",") if isinstance(x, (int, float)) else ""
+    for d in targets:
+        e = accounting_entry(d); jr = e.get("journal", "ACH"); date = d.get("doc_date") or ""
+        sup = d.get("supplier_name") or ""; piece = d.get("doc_number") or ""
+        for l in e["lines"]:
+            if l.get("pos") is not None:          # expense line (with analytics)
+                w.writerow([jr, date, l["account"], l["label"], sup, n(l.get("debit")), "",
+                            n(l.get("htva")), n(l.get("tva") or 0), l.get("inv_expl") or "",
+                            l.get("pos") or "", l.get("services") or "", piece])
+            elif l.get("debit") is not None:      # VAT line (42161100)
+                w.writerow([jr, date, l["account"], l["label"], sup, n(l.get("debit")), "", "", "", "", "", "", piece])
+            elif l.get("credit") is not None:     # supplier line (44111000)
+                w.writerow([jr, date, l["account"], l["label"], sup, "", n(l.get("credit")), "", "", "", "", "", piece])
+        d["exported"] = True
+        d["exported_at"] = dt.datetime.utcnow().isoformat(timespec="seconds")
+    if targets: _save_state()
+    fname = "journal_ACH_" + dt.datetime.utcnow().strftime("%Y%m%d_%H%M") + ".csv"
+    return "\ufeff" + buf.getvalue(), len(targets), fname
 
 def _acct_options():
     accs = sorted(({"account": a, "label": v.get("label", a), "pos": v.get("pos"),

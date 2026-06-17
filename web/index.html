@@ -183,6 +183,8 @@
   .rcptseg button{background:#fff;border:none;padding:6px 15px;font-size:12.5px;font-family:inherit;color:var(--ink);cursor:pointer;border-right:1px solid var(--rule)}
   .rcptseg button:last-child{border-right:none}
   .rcptseg button.on{background:var(--bordeaux);color:#fff}
+.acctbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:13px}
+.acctbar .rcptseg{margin-bottom:0}
   /* --- per-delivery counted-by --- */
   .rcptby{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
   .cntby{width:150px;padding:4px 9px;border:1px solid var(--rule);border-radius:6px;font-family:inherit;font-size:12.5px;color:var(--ink)}
@@ -522,7 +524,7 @@ function renderAccounting(){
     <div class="tile good"><div class="lab">Posted</div><div class="val">${posted}</div></div>
     <div class="tile"><div class="lab">Open payable</div><div class="val" style="font-size:23px">${eur(payable)}</div></div>`;
   const empty=$('#acct-empty'); if(empty)empty.style.display=inv.length?'none':'block';
-  const seg=`<div class="rcptseg"><button class="${ACCT_VIEW==='active'?'on':''}" onclick="setAcctView('active')">Active (${active.length})</button><button class="${ACCT_VIEW==='archived'?'on':''}" onclick="setAcctView('archived')">Archived (${arch.length})</button></div>`;
+  const seg=`<div class="acctbar"><div class="rcptseg"><button class="${ACCT_VIEW==='active'?'on':''}" onclick="setAcctView('active')">Active (${active.length})</button><button class="${ACCT_VIEW==='archived'?'on':''}" onclick="setAcctView('archived')">Archived (${arch.length})</button></div><button class="act mini" title="Exporter les écritures postées non encore exportées" onclick="exportJournal('new')">⬇ Export journal (CSV)</button></div>`;
   const list=ACCT_VIEW==='archived'?arch:active;
   const msg=`<div class="note" style="margin-top:6px">${ACCT_VIEW==='archived'?'No archived entries yet. Post an entry, then use Archive to file it here.':'Nothing here — every entry has been archived.'}</div>`;
   $('#acct-list').innerHTML=(inv.length?seg:'')+(list.length?list.map(acctBlock).join(''):(inv.length?msg:''));
@@ -592,8 +594,9 @@ function acctBlock(i){
     act=`<button class="ghost mini" onclick="acctStartEdit('${key}')">✎ Edit</button>${reset} ${post} ${arch}`;
   }
   const jrnTag=e.journal?` <span class="tag">journal ${e.journal}</span>`:'';
+  const expTag=i.exported?` <span class="tag">⬇ exported${i.exported_at?' · '+i.exported_at.slice(0,10):''}</span>`:'';
   return `<div class="acctblock ${i.posted?'done':''}${i.archived?' archived':''}" data-akey="${key}">
-    <div class="blockhead"><div class="bh-left"><span class="setref">${i.doc_number||''}</span> <span class="setsup">· ${i.supplier_name||'—'}${i.doc_date?' · '+i.doc_date:''}</span>${i.po_reference?' <span class="tag">order '+i.po_reference+'</span>':''}${jrnTag}</div>${view}</div>
+    <div class="blockhead"><div class="bh-left"><span class="setref">${i.doc_number||''}</span> <span class="setsup">· ${i.supplier_name||'—'}${i.doc_date?' · '+i.doc_date:''}</span>${i.po_reference?' <span class="tag">order '+i.po_reference+'</span>':''}${jrnTag}${expTag}</div>${view}</div>
     <table class="jrn"><tr><th>Side</th><th>Account</th><th>Point of sale</th><th>Service</th><th>Inv/Op</th><th style="text-align:right">${i.currency||'EUR'}</th></tr>${erows}${vrow}${srow}</table>
     <div class="acctfoot"><div class="note">Net ${eur(e.net)} · VAT ${eur(e.vat)} (${rate}) · Gross ${eur(e.gross)}</div><div class="acctactions">${bal} ${act}</div></div>
   </div>`;
@@ -613,6 +616,17 @@ async function acctSaveEdit(key){
 async function postEntry(key){try{const r=await fetch('/api/accounting/post?key='+encodeURIComponent(key),{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
 async function undoPost(key){try{const r=await fetch('/api/accounting/post?key='+encodeURIComponent(key)+'&undo=true',{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
 async function archiveEntry(key,on){try{const r=await fetch('/api/accounting/archive?key='+encodeURIComponent(key)+'&undo='+(on?'false':'true'),{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
+async function exportJournal(scope){
+  try{
+    const r=await fetch('/api/accounting/export?scope='+(scope||'new'),{method:'POST'});
+    const d=await r.json();
+    if(d.count>0){
+      const blob=new Blob([d.csv],{type:'text/csv;charset=utf-8'});
+      const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=d.filename;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);
+    }else{alert('Aucune écriture postée à exporter (les écritures déjà exportées ne sont pas réexportées).');}
+    if(d.accounting){ACCT=d.accounting;renderAccounting();}
+  }catch(e){}
+}
 
 
 /* ---------- GOODS RECEIPT ---------- */

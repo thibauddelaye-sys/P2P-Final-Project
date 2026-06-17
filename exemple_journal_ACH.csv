@@ -1,0 +1,10 @@
+﻿Journal;Date;Compte;Libellé;Référence tiers;Débit;Crédit;Base HTVA;Montant TVA;INVEST/EXPLOITATION;POINT DE VENTE;SERVICES;Pièce
+ACH;05/03/2024;61610100;Assurances;AssurLux S.A.;1850,00;;1850,00;0,00;EXPLOIT;Administration;Administration;FAC-AL-2024-0027
+ACH;05/03/2024;44111000;Fournisseurs — AssurLux S.A.;AssurLux S.A.;;1850,00;;;;;;FAC-AL-2024-0027
+ACH;12/03/2024;60101300;Achats Vins & Champagne;Caves du Grand-Duché S.à r.l.;1024,80;;1024,80;174,22;EXPLOIT;Cave;Boissons;FAC-2024-0312
+ACH;12/03/2024;60101400;Achats Spiritueux;Caves du Grand-Duché S.à r.l.;486,00;;486,00;82,62;EXPLOIT;Cave;Boissons;FAC-2024-0312
+ACH;12/03/2024;42161100;TVA en amont;Caves du Grand-Duché S.à r.l.;256,84;;;;;;;FAC-2024-0312
+ACH;12/03/2024;44111000;Fournisseurs — Caves du Grand-Duché S.à r.l.;Caves du Grand-Duché S.à r.l.;;1767,64;;;;;;FAC-2024-0312
+ACH;15/03/2024;60315000;Électricité;Énergie Lux S.A.;1850,00;;1850,00;148,00;EXPLOIT;Administration;Énergie;FAC-EN-2024-0312
+ACH;15/03/2024;42161100;TVA en amont;Énergie Lux S.A.;148,00;;;;;;;FAC-EN-2024-0312
+ACH;15/03/2024;44111000;Fournisseurs — Énergie Lux S.A.;Énergie Lux S.A.;;1998,00;;;;;;FAC-EN-2024-0312

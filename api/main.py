@@ -242,6 +242,12 @@ def accounting_archive(key: str, undo: bool = False):
         raise HTTPException(404, "Invoice not found")
     return docs.accounting()
 
+@app.post("/api/accounting/export")
+def accounting_export(scope: str = "new"):
+    from . import documents as docs
+    csv_text, n, fname = docs.export_journal(scope=scope)
+    return {"count": n, "filename": fname, "csv": csv_text, "accounting": docs.accounting()}
+
 @app.get("/api/receipts")
 def receipts_list():
     from . import documents as docs
