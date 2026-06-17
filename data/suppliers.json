@@ -1,16 +1,115 @@
 {
   "_note": "Supplier master data (fictional, Maison Lumière). type=goods → PO/BL expected; type=overhead → booked directly, no PO. default_account drives imputation for overhead; tiers/pos optionally refine the cost centre.",
   "suppliers": [
-    {"name":"Caves du Grand-Duché S.à r.l.","email":"facturation@caves-grandduche.lu","type":"goods","vat":"LU12345678","terms_days":30,"tiers":null,"pos":null,"default_account":null},
-    {"name":"Distrifood Lux S.à r.l.","email":"compta@distrifood.lu","type":"goods","vat":"LU23456789","terms_days":30,"tiers":null,"pos":null,"default_account":null},
-    {"name":"Café Royal Distribution","email":"orders@caferoyal-dist.lu","type":"goods","vat":"LU34567890","terms_days":30,"tiers":null,"pos":null,"default_account":"60101500"},
-    {"name":"Blanchisserie Centrale Lux","email":"facturation@blanchisserie-centrale.lu","type":"goods","vat":"LU45678901","terms_days":30,"tiers":null,"pos":null,"default_account":"60320200"},
-    {"name":"Énergie Lux S.A.","email":"factures@energielux.lu","type":"overhead","vat":"LU56789012","terms_days":15,"tiers":null,"pos":null,"default_account":"60315000"},
-    {"name":"Gaz Naturel Luxembourg S.A.","email":"factures@gaznaturel.lu","type":"overhead","vat":"LU67890123","terms_days":15,"tiers":null,"pos":null,"default_account":"60313000"},
-    {"name":"Eaux de la Capitale","email":"facturation@eaux-capitale.lu","type":"overhead","vat":"LU78901234","terms_days":30,"tiers":null,"pos":null,"default_account":"60314000"},
-    {"name":"POST Telecom Lux","email":"business@post-telecom.lu","type":"overhead","vat":"LU89012345","terms_days":15,"tiers":null,"pos":null,"default_account":"61532000"},
-    {"name":"TechMaintenance S.à r.l.","email":"contrats@techmaintenance.lu","type":"overhead","vat":"LU90123456","terms_days":30,"tiers":null,"pos":null,"default_account":"61210001"},
-    {"name":"RénovTech Bâtiment S.à r.l.","email":"devis@renovtech.lu","type":"overhead","vat":"LU01234567","terms_days":30,"tiers":null,"pos":null,"default_account":"61221009"},
-    {"name":"AssurLux S.A.","email":"contrats@assurlux.lu","type":"overhead","vat":"LU11223344","terms_days":30,"tiers":null,"pos":null,"default_account":"61610100"}
+    {
+      "name": "Caves du Grand-Duché S.à r.l.",
+      "email": "facturation@caves-grandduche.lu",
+      "type": "goods",
+      "vat": "LU12345678",
+      "terms_days": 30,
+      "tiers": null,
+      "pos": null,
+      "default_account": null
+    },
+    {
+      "name": "Distrifood Lux S.à r.l.",
+      "email": "compta@distrifood.lu",
+      "type": "goods",
+      "vat": "LU23456789",
+      "terms_days": 30,
+      "tiers": null,
+      "pos": null,
+      "default_account": null
+    },
+    {
+      "name": "Café Royal Distribution",
+      "email": "orders@caferoyal-dist.lu",
+      "type": "goods",
+      "vat": "LU34567890",
+      "terms_days": 30,
+      "tiers": null,
+      "pos": null,
+      "default_account": "60101500"
+    },
+    {
+      "name": "Blanchisserie Centrale Lux",
+      "email": "facturation@blanchisserie-centrale.lu",
+      "type": "goods",
+      "vat": "LU45678901",
+      "terms_days": 30,
+      "tiers": null,
+      "pos": "Housekeeping",
+      "default_account": "60320200"
+    },
+    {
+      "name": "Énergie Lux S.A.",
+      "email": "factures@energielux.lu",
+      "type": "overhead",
+      "vat": "LU56789012",
+      "terms_days": 15,
+      "tiers": null,
+      "pos": null,
+      "default_account": "60315000"
+    },
+    {
+      "name": "Gaz Naturel Luxembourg S.A.",
+      "email": "factures@gaznaturel.lu",
+      "type": "overhead",
+      "vat": "LU67890123",
+      "terms_days": 15,
+      "tiers": null,
+      "pos": null,
+      "default_account": "60313000"
+    },
+    {
+      "name": "Eaux de la Capitale",
+      "email": "facturation@eaux-capitale.lu",
+      "type": "overhead",
+      "vat": "LU78901234",
+      "terms_days": 30,
+      "tiers": null,
+      "pos": null,
+      "default_account": "60314000"
+    },
+    {
+      "name": "POST Telecom Lux",
+      "email": "business@post-telecom.lu",
+      "type": "overhead",
+      "vat": "LU89012345",
+      "terms_days": 15,
+      "tiers": null,
+      "pos": null,
+      "default_account": "61532000"
+    },
+    {
+      "name": "TechMaintenance S.à r.l.",
+      "email": "contrats@techmaintenance.lu",
+      "type": "overhead",
+      "vat": "LU90123456",
+      "terms_days": 30,
+      "tiers": null,
+      "pos": null,
+      "default_account": "61210001"
+    },
+    {
+      "name": "RénovTech Bâtiment S.à r.l.",
+      "email": "devis@renovtech.lu",
+      "type": "overhead",
+      "vat": "LU01234567",
+      "terms_days": 30,
+      "tiers": null,
+      "pos": null,
+      "default_account": "61221009"
+    },
+    {
+      "name": "AssurLux S.A.",
+      "email": "contrats@assurlux.lu",
+      "type": "overhead",
+      "vat": "LU11223344",
+      "terms_days": 30,
+      "tiers": null,
+      "pos": null,
+      "default_account": "61610100"
+    }
   ]
 }

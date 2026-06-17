@@ -248,6 +248,18 @@ def load_sample():
          {"description":"Dégraissant cuisine professionnel 5L","quantity":6,"unit_price":14.50}]
     dinv=[dict(li) for li in dpo]; dinv[1]={**dinv[1],"unit_price":24.00}   # Saumon overbilled
     dbl=[{**li,"unit_price":None} for li in dpo]
+    cafe=[{"description":"Café en grains Arabica 1kg","quantity":20,"unit_price":18.50},
+          {"description":"Décaféiné moulu 1kg","quantity":8,"unit_price":16.00},
+          {"description":"Thé vert sachets x100","quantity":10,"unit_price":9.50},
+          {"description":"Chocolat chaud poudre 1kg","quantity":6,"unit_price":12.00}]
+    cafe_bl=[{**li,"unit_price":None} for li in cafe]
+    blan=[{"description":"Nappe blanche 200x200","quantity":60,"unit_price":14.00},
+          {"description":"Serviette de table blanche","quantity":300,"unit_price":1.20},
+          {"description":"Drap-housse 160x200","quantity":40,"unit_price":22.00},
+          {"description":"Peignoir éponge adulte","quantity":20,"unit_price":35.00}]
+    blan_bl=[{**li,"unit_price":None} for li in blan]
+    blan_inv=[dict(li) for li in blan]; blan_inv[1]={**blan_inv[1],"unit_price":1.50}   # serviette: price variance
+    blan_inv.append({"description":"Tapis de bain éponge","quantity":10,"unit_price":18.00})   # not on PO
     sample = [
       doc("purchase_order","PO-2024-0087","PO-2024-0087","Caves du Grand-Duché S.à r.l.","05/03/2024",caves,None),
       doc("delivery_note","BL-2024-0312","PO-2024-0087","Caves du Grand-Duché S.à r.l.","08/03/2024",caves_bl,None),
@@ -259,6 +271,22 @@ def load_sample():
           [{"description":"Électricité - consommation février 2024","quantity":1,"unit_price":1850.00}],1998.00),
       doc("invoice","FAC-TM-2024-0077",None,"TechMaintenance S.à r.l.","10/03/2024",
           [{"description":"Contrat de maintenance CVC - 1er trimestre 2024","quantity":1,"unit_price":1200.00}],1404.00),
+      doc("purchase_order","PO-2024-0102","PO-2024-0102","Café Royal Distribution","11/03/2024",cafe,None),
+      doc("delivery_note","BL-2024-0419","PO-2024-0102","Café Royal Distribution","14/03/2024",cafe_bl,None),
+      doc("invoice","FAC-CR-2024-0419","PO-2024-0102","Café Royal Distribution","18/03/2024",cafe,684.95),
+      doc("purchase_order","PO-2024-0108","PO-2024-0108","Blanchisserie Centrale Lux","09/03/2024",blan,None),
+      doc("delivery_note","BL-2024-0501","PO-2024-0108","Blanchisserie Centrale Lux","13/03/2024",blan_bl,None),
+      doc("invoice","FAC-BL-2024-0501","PO-2024-0108","Blanchisserie Centrale Lux","16/03/2024",blan_inv,None),
+      doc("invoice","FAC-GN-2024-0188",None,"Gaz Naturel Luxembourg S.A.","12/03/2024",
+          [{"description":"Gaz naturel - consommation février 2024","quantity":1,"unit_price":920.00}],993.60),
+      doc("invoice","FAC-EC-2024-0233",None,"Eaux de la Capitale","14/03/2024",
+          [{"description":"Eau et assainissement - 1er trimestre 2024","quantity":1,"unit_price":480.00}],494.40),
+      doc("invoice","FAC-PT-2024-0455",None,"POST Telecom Lux","13/03/2024",
+          [{"description":"Abonnement fibre + téléphonie - février 2024","quantity":1,"unit_price":350.00}],409.50),
+      doc("invoice","FAC-RT-2024-0061",None,"RénovTech Bâtiment S.à r.l.","17/03/2024",
+          [{"description":"Rénovation technique - réfection plomberie chambres 3e étage","quantity":1,"unit_price":4200.00}],4914.00),
+      doc("invoice","FAC-AL-2024-0027",None,"AssurLux S.A.","05/03/2024",
+          [{"description":"Prime d'assurance multirisque - 1er trimestre 2024","quantity":1,"unit_price":1850.00}],1850.00),
     ]
     for d in sample:
         d.update({"key":f"sample/{d['doc_number']}","filename":f"{d['doc_number']}.pdf",
@@ -367,7 +395,7 @@ def accounting_entry(doc):
     supplier = doc.get("supplier_name") or ""
     rec = supplier_record(supplier)
     sup_default = rec.get("default_account") if rec else None
-    prefer = bool(sup_default) and (rec.get("type") == "overhead" if rec else False)
+    prefer = bool(sup_default)
     rows, net = {}, 0.0
     for li in (doc.get("line_items") or []):
         u = li.get("unit_price")
@@ -385,8 +413,9 @@ def accounting_entry(doc):
         r["htva"] = round(r["htva"] + amt, 2)
     net = round(net, 2)
     ttc = doc.get("total_incl_vat")
-    if ttc and ttc > net + 0.01:
+    if ttc is not None:
         vat = round(ttc - net, 2); assumed = False
+        if vat < 0: vat = 0.0
     else:
         vat = round(net * 0.17, 2); ttc = round(net + vat, 2); assumed = True
     rate = (vat / net) if net else 0.0
@@ -413,12 +442,14 @@ def accounting_entry(doc):
                       "pos": r["pos"], "services": r["services"],
                       "pos_conf": r["pos_conf"], "services_conf": r["services_conf"],
                       "pos_src": r["pos_src"], "basis": r["basis"], "edited": r["edited"]})
-    lines.append({"account": va.get("account"), "label": va.get("label"), "debit": vat, "credit": None,
-                  "htva": None, "tva": None, "inv_expl": None, "pos": None, "services": None})
+    if vat:
+        lines.append({"account": va.get("account"), "label": va.get("label"), "debit": vat, "credit": None,
+                      "htva": None, "tva": None, "inv_expl": None, "pos": None, "services": None})
     lines.append({"account": pa.get("account"), "label": payable_label, "debit": None, "credit": ttc,
                   "htva": None, "tva": None, "inv_expl": None, "pos": None, "services": None})
     debits = [{"account": r["account"], "label": r["label"], "amount": r["htva"]} for r in exp]
-    debits.append({"account": va.get("account"), "label": va.get("label"), "amount": vat})
+    if vat:
+        debits.append({"account": va.get("account"), "label": va.get("label"), "amount": vat})
     credit = {"account": pa.get("account"), "label": payable_label, "amount": ttc}
     total_debit = round(sum(d["amount"] for d in debits), 2)
     return {"lines": lines, "journal": LOOKUPS.get("journal", "ACH"),

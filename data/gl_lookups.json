@@ -59,7 +59,7 @@
       "label": "Achats Cafétéria",
       "services": "Nourriture",
       "services_conf": 1.0,
-      "pos": "Cave",
+      "pos": "Café",
       "pos_conf": 0.93,
       "inv_expl": "EXPLOIT",
       "flow": "goods"
@@ -165,8 +165,8 @@
     },
     "61610100": {
       "label": "Assurances",
-      "services": "Restauration",
-      "services_conf": 0.38,
+      "services": "Administration",
+      "services_conf": 0,
       "pos": "Administration",
       "pos_conf": 0.38,
       "inv_expl": "EXPLOIT",
