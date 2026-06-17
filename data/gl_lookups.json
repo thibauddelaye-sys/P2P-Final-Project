@@ -16,7 +16,8 @@
       "services_conf": 1.0,
       "pos": "Brasserie",
       "pos_conf": 0.68,
-      "inv_expl": "EXPLOIT"
+      "inv_expl": "EXPLOIT",
+      "flow": "goods"
     },
     "60101100": {
       "label": "Achats Boissons sans alcool",
@@ -24,7 +25,8 @@
       "services_conf": 1.0,
       "pos": "Cave",
       "pos_conf": 0.98,
-      "inv_expl": "EXPLOIT"
+      "inv_expl": "EXPLOIT",
+      "flow": "goods"
     },
     "60101200": {
       "label": "Achats Bières",
@@ -32,7 +34,8 @@
       "services_conf": 1.0,
       "pos": "Cave",
       "pos_conf": 1.0,
-      "inv_expl": "EXPLOIT"
+      "inv_expl": "EXPLOIT",
+      "flow": "goods"
     },
     "60101300": {
       "label": "Achats Vins & Champagne",
@@ -40,7 +43,8 @@
       "services_conf": 1.0,
       "pos": "Cave",
       "pos_conf": 1.0,
-      "inv_expl": "EXPLOIT"
+      "inv_expl": "EXPLOIT",
+      "flow": "goods"
     },
     "60101400": {
       "label": "Achats Spiritueux",
@@ -48,7 +52,8 @@
       "services_conf": 1.0,
       "pos": "Cave",
       "pos_conf": 1.0,
-      "inv_expl": "EXPLOIT"
+      "inv_expl": "EXPLOIT",
+      "flow": "goods"
     },
     "60101500": {
       "label": "Achats Cafétéria",
@@ -56,7 +61,8 @@
       "services_conf": 1.0,
       "pos": "Cave",
       "pos_conf": 0.93,
-      "inv_expl": "EXPLOIT"
+      "inv_expl": "EXPLOIT",
+      "flow": "goods"
     },
     "60320200": {
       "label": "Produits de nettoyage",
@@ -64,7 +70,8 @@
       "services_conf": 0.86,
       "pos": "Cuisine",
       "pos_conf": 0.83,
-      "inv_expl": "EXPLOIT"
+      "inv_expl": "EXPLOIT",
+      "flow": "goods"
     },
     "60331300": {
       "label": "Consommables cuisine",
@@ -72,7 +79,8 @@
       "services_conf": 1.0,
       "pos": "Cuisine",
       "pos_conf": 1.0,
-      "inv_expl": "EXPLOIT"
+      "inv_expl": "EXPLOIT",
+      "flow": "goods"
     },
     "60380100": {
       "label": "Produits d'accueil",
@@ -80,7 +88,8 @@
       "services_conf": 0.9,
       "pos": "Hébergement",
       "pos_conf": 0.9,
-      "inv_expl": "EXPLOIT"
+      "inv_expl": "EXPLOIT",
+      "flow": "goods"
     },
     "60350100": {
       "label": "Fournitures de bureau",
@@ -88,7 +97,8 @@
       "services_conf": 1.0,
       "pos": "Administration",
       "pos_conf": 1.0,
-      "inv_expl": "EXPLOIT"
+      "inv_expl": "EXPLOIT",
+      "flow": "goods"
     },
     "61210001": {
       "label": "Contrats de maintenance",
@@ -96,7 +106,8 @@
       "services_conf": 0.35,
       "pos": "Administration",
       "pos_conf": 0.76,
-      "inv_expl": "EXPLOIT"
+      "inv_expl": "EXPLOIT",
+      "flow": "overhead"
     },
     "61532000": {
       "label": "Télécommunications",
@@ -104,7 +115,8 @@
       "services_conf": 0.25,
       "pos": "Administration",
       "pos_conf": 0.78,
-      "inv_expl": "EXPLOIT"
+      "inv_expl": "EXPLOIT",
+      "flow": "overhead"
     },
     "60380000": {
       "label": "Autres fournitures consommables",
@@ -112,7 +124,53 @@
       "services_conf": 0.5,
       "pos": "Cuisine",
       "pos_conf": 0.33,
-      "inv_expl": "EXPLOIT"
+      "inv_expl": "EXPLOIT",
+      "flow": "goods"
+    },
+    "60313000": {
+      "label": "Gaz",
+      "services": "Énergie",
+      "services_conf": 1.0,
+      "pos": "Administration",
+      "pos_conf": 0.92,
+      "inv_expl": "EXPLOIT",
+      "flow": "overhead"
+    },
+    "60314000": {
+      "label": "Eau",
+      "services": "Énergie",
+      "services_conf": 1.0,
+      "pos": "Administration",
+      "pos_conf": 1.0,
+      "inv_expl": "EXPLOIT",
+      "flow": "overhead"
+    },
+    "60315000": {
+      "label": "Électricité",
+      "services": "Énergie",
+      "services_conf": 1.0,
+      "pos": "Administration",
+      "pos_conf": 1.0,
+      "inv_expl": "EXPLOIT",
+      "flow": "overhead"
+    },
+    "61221009": {
+      "label": "Réparations & entretien bâtiment",
+      "services": "Maintenance",
+      "services_conf": 1.0,
+      "pos": "Divers",
+      "pos_conf": 1.0,
+      "inv_expl": "EXPLOIT",
+      "flow": "overhead"
+    },
+    "61610100": {
+      "label": "Assurances",
+      "services": "Restauration",
+      "services_conf": 0.38,
+      "pos": "Administration",
+      "pos_conf": 0.38,
+      "inv_expl": "EXPLOIT",
+      "flow": "overhead"
     }
   },
   "supplier_pos": {},

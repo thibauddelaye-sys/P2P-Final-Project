@@ -272,6 +272,7 @@
       </div>
       <div id="doc-tiles"></div>
       <div id="doc-groups"></div>
+      <div id="doc-direct"></div>
       <div id="doc-loose"></div>
     </section>
 
@@ -335,15 +336,34 @@ function renderDocsPage(){
   Object.keys(DOCMAP).forEach(k=>delete DOCMAP[k]);
   let complete=0,exc=0;
   (DOCS.groups||[]).forEach(g=>{g.documents.forEach(d=>DOCMAP[d.key]=d);if(g.complete)complete++;if(g.match&&g.match.status==='EXCEPTION')exc++;});
+  (DOCS.direct||[]).forEach(d=>DOCMAP[d.key]=d);
   (DOCS.loose||[]).forEach(d=>DOCMAP[d.key]=d);
+  const direct=DOCS.direct||[], loose=DOCS.loose||[];
   $('#doc-tiles').innerHTML=`
     <div class="tile"><div class="lab">Captured</div><div class="val">${DOCS.count||0}</div></div>
     <div class="tile good"><div class="lab">Matched sets</div><div class="val">${Math.max(complete-exc,0)}</div></div>
-    <div class="tile alert"><div class="lab">Sets with exceptions</div><div class="val">${exc}</div></div>`;
+    <div class="tile alert"><div class="lab">Exceptions</div><div class="val">${exc+loose.length}</div></div>
+    <div class="tile"><div class="lab">Direct expenses</div><div class="val">${direct.length}</div></div>`;
   const groups=DOCS.groups||[];
   $('#doc-groups').innerHTML=groups.length?groups.map(groupBlock).join(''):'<div class="note" style="margin-top:14px">No documents yet. Email them to your mailbox, then click "Check inbox" — or load the sample set.</div>';
-  const loose=DOCS.loose||[];
-  $('#doc-loose').innerHTML=loose.length?`<div class="setblock inc" style="margin-top:14px"><div class="blockhead"><div class="bh-left"><span class="tag warn">awaiting a match</span> <span class="setref">No order number yet</span></div></div><div class="rows">${loose.map(docRow).join('')}</div></div>`:'';
+  $('#doc-direct').innerHTML=direct.length?`<div class="setblock ok" style="margin-top:14px">
+    <div class="blockhead"><div class="bh-left"><span class="tag ok">direct expense · no PO</span> <span class="setref">Overhead invoices</span> <span class="setsup">· booked straight to the journal</span></div></div>
+    <div class="rows">${direct.map(directRow).join('')}</div></div>`:'';
+  $('#doc-loose').innerHTML=loose.length?`<div class="setblock exc" style="margin-top:14px">
+    <div class="blockhead"><div class="bh-left"><span class="tag bad">missing order</span> <span class="setref">Invoice without a PO</span></div></div>
+    <div class="rows">${loose.map(docRow).join('')}</div>
+    <div class="blocknote bad">A goods invoice should reference a purchase order and delivery note — investigate or request the order.</div></div>`:'';
+}
+function directRow(it){
+  const view=it.has_file?`<button class="iconbtn" title="View invoice" onclick="openFile('${it.key}')">🔍</button>`:`<span class="note" style="font-size:10.5px">no file</span>`;
+  const hov=it.has_file?`onmouseenter="showPrev(event,'${it.key}')" onmouseleave="hidePrev()"`:'';
+  const acc=it.account?`${it.account} · ${it.account_label||''}`:'';
+  return `<div class="drow" ${hov}>
+    <span class="rtype">Facture · directe</span>
+    <span class="rnum">${it.doc_number||''} <span class="note" style="font-weight:400">· ${it.supplier_name||''}</span></span>
+    <span class="rsrc note" style="font-size:11.5px">${acc}</span>
+    <span class="rdate">${it.gross!=null?eur(it.gross):''}</span>
+    <span class="rview">${view}</span></div>`;
 }
 
 function statusPill(g){

@@ -32,9 +32,11 @@ def main(gl_path, chart_path=None):
         srv, sc = modal(g, "SERVICES")
         pos, pc = modal(g, "POINT DE VENTE")
         inv, _ = modal(g, "INVEST / EXPLOITATION")
-        accounts[str(acc)] = {"label": labels.get(str(acc), str(acc)),
-                              "services": srv, "services_conf": sc,
-                              "pos": pos, "pos_conf": pc, "inv_expl": inv or "EXPLOIT"}
+        a = str(acc)
+        flow = "overhead" if (a.startswith("61") or a[:5] in ("60313","60314","60315","60360") or a[:2] in ("62","63","64")) else "goods"
+        accounts[a] = {"label": labels.get(a, a),
+                       "services": srv, "services_conf": sc,
+                       "pos": pos, "pos_conf": pc, "inv_expl": inv or "EXPLOIT", "flow": flow}
     sup = exp[exp["Référence tiers"].notna()]
     supplier_pos = {}
     for s in sup["Référence tiers"].dropna().unique():

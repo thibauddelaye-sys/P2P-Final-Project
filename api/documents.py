@@ -205,12 +205,32 @@ def grouped() -> dict:
     out = []
     for ref, docs in sorted(groups.items()):
         types = {d.get("doc_type") for d in docs}
-        complete = {"purchase_order","delivery_note","invoice"} <= types
+        complete = {"purchase_order", "delivery_note", "invoice"} <= types
         out.append({"po_reference": ref,
                     "supplier": next((d.get("supplier_name") for d in docs if d.get("supplier_name")), None),
                     "documents": docs, "present": sorted(t for t in types if t),
                     "complete": complete, "match": three_way(docs) if complete else None})
-    return {"groups": out, "loose": loose, "count": len(STORE)}
+    direct, orphans = [], []
+    for d in loose:
+        if d.get("doc_type") == "invoice":
+            cl = classify_invoice(d)
+            e = accounting_entry(d)
+            l0 = e["lines"][0] if e.get("lines") else {}
+            item = {"key": d["key"], "doc_type": "invoice", "doc_number": d.get("doc_number"),
+                    "supplier_name": d.get("supplier_name"), "doc_date": d.get("doc_date"),
+                    "po_reference": d.get("po_reference"), "filename": d.get("filename"),
+                    "line_items": d.get("line_items"), "total_incl_vat": d.get("total_incl_vat"),
+                    "error": d.get("error"), "has_file": d.get("has_file"), "source": d.get("source"),
+                    "flow": cl["flow"], "requires_po": cl["requires_po"], "basis": cl["basis"],
+                    "gross": e.get("gross"), "account": l0.get("account"), "account_label": l0.get("label")}
+            (direct if cl["flow"] == "overhead" else orphans).append(item)
+        else:
+            orphans.append({"key": d["key"], "doc_type": d.get("doc_type"), "doc_number": d.get("doc_number"),
+                            "supplier_name": d.get("supplier_name"), "doc_date": d.get("doc_date"),
+                            "po_reference": d.get("po_reference"), "filename": d.get("filename"),
+                            "line_items": d.get("line_items"), "total_incl_vat": d.get("total_incl_vat"),
+                            "has_file": d.get("has_file"), "source": d.get("source"), "orphan_doc": True})
+    return {"groups": out, "direct": direct, "loose": orphans, "count": len(STORE)}
 
 # ---- sample data (mirrors the 6 demo PDFs) so the page works without email/API ----
 def load_sample():
@@ -235,6 +255,10 @@ def load_sample():
       doc("purchase_order","PO-2024-0091","PO-2024-0091","Distrifood Lux S.à r.l.","02/03/2024",dpo,None),
       doc("delivery_note","BL-24-1145","PO-2024-0091","Distrifood Lux S.à r.l.","06/03/2024",dbl,None),
       doc("invoice","FAC-24-1145","PO-2024-0091","Distrifood Lux S.à r.l.","08/03/2024",dinv,None),
+      doc("invoice","FAC-EN-2024-0312",None,"Énergie Lux S.A.","15/03/2024",
+          [{"description":"Électricité - consommation février 2024","quantity":1,"unit_price":1850.00}],1998.00),
+      doc("invoice","FAC-TM-2024-0077",None,"TechMaintenance S.à r.l.","10/03/2024",
+          [{"description":"Contrat de maintenance CVC - 1er trimestre 2024","quantity":1,"unit_price":1200.00}],1404.00),
     ]
     for d in sample:
         d.update({"key":f"sample/{d['doc_number']}","filename":f"{d['doc_number']}.pdf",
@@ -276,38 +300,80 @@ def _load_keywords():
 LOOKUPS = _load_lookups()
 KEYWORDS = _load_keywords()
 
+import unicodedata as _ud
+def _supkey(n):
+    n = _ud.normalize("NFKD", (n or "")).encode("ascii", "ignore").decode().lower()
+    return "".join(ch for ch in n if ch.isalnum())
+def _load_suppliers():
+    p = os.path.join(_DATA, "suppliers.json")
+    try:
+        d = json.load(open(p, encoding="utf-8"))
+        return d.get("suppliers", []) if isinstance(d, dict) else (d or [])
+    except Exception:
+        return []
+SUPPLIERS = _load_suppliers()
+_SUP_BY_KEY = {_supkey(s.get("name")): s for s in SUPPLIERS if s.get("name")}
+def supplier_record(name):
+    return _SUP_BY_KEY.get(_supkey(name)) if name else None
+
+def classify_invoice(doc):
+    rec = supplier_record(doc.get("supplier_name"))
+    if rec and rec.get("type") in ("goods", "overhead"):
+        flow = rec["type"]
+        return {"flow": flow, "requires_po": flow == "goods", "basis": "supplier"}
+    flows = {}
+    for li in (doc.get("line_items") or []):
+        acc, _b = gl_account(li.get("description"))
+        f = LOOKUPS["accounts"].get(acc, {}).get("flow", "goods")
+        amt = (li.get("quantity") or 0) * (li.get("unit_price") or 0)
+        flows[f] = flows.get(f, 0) + (amt or 1)
+    flow = max(flows, key=flows.get) if flows else "goods"
+    return {"flow": flow, "requires_po": flow == "goods", "basis": "account"}
+
 def _acc_label(acc):
     a = LOOKUPS["accounts"].get(acc)
     return a["label"] if a and a.get("label") else acc
 
 def analytics_for(account, supplier=None):
     a = LOOKUPS["accounts"].get(account, {})
-    pos = a.get("pos") or "\u2014"; services = a.get("services") or "\u2014"
+    pos = a.get("pos") or "—"; services = a.get("services") or "—"
     pc = a.get("pos_conf", 0); sc = a.get("services_conf", 0)
     inv = a.get("inv_expl") or "EXPLOIT"
-    sp = LOOKUPS.get("supplier_pos", {}).get(supplier or "")
     src = "compte"
+    rec = supplier_record(supplier)
+    tiers = rec.get("tiers") if rec else None
+    spm = LOOKUPS.get("supplier_pos", {})
+    sp = spm.get(tiers or "") or spm.get(supplier or "")
     if sp:
         pos = sp.get("pos", pos); pc = sp.get("pos_conf", pc); src = "fournisseur"
+    elif rec and rec.get("pos"):
+        pos = rec["pos"]; pc = 1.0; src = "fournisseur"
     return {"services": services, "pos": pos, "inv_expl": inv,
             "services_conf": sc, "pos_conf": pc, "pos_src": src}
 
-def gl_account(desc):
+def gl_account(desc, default=None, prefer_default=False):
+    if prefer_default and default:
+        return default, "fournisseur"
     d = (desc or "").lower()
     for acc, kws in KEYWORDS.items():
         for kw in kws:
             if kw and kw in d:
-                return acc, "mot-cl\u00e9"
-    return LOOKUPS.get("fallback_account", "60380000"), "d\u00e9faut"
+                return acc, "mot-clé"
+    if default:
+        return default, "fournisseur"
+    return LOOKUPS.get("fallback_account", "60380000"), "défaut"
 
 def accounting_entry(doc):
     supplier = doc.get("supplier_name") or ""
+    rec = supplier_record(supplier)
+    sup_default = rec.get("default_account") if rec else None
+    prefer = bool(sup_default) and (rec.get("type") == "overhead" if rec else False)
     rows, net = {}, 0.0
     for li in (doc.get("line_items") or []):
         u = li.get("unit_price")
         if u is None: continue
         amt = round((li.get("quantity") or 0) * u, 2); net += amt
-        acc, basis = gl_account(li.get("description"))
+        acc, basis = gl_account(li.get("description"), sup_default, prefer)
         an = analytics_for(acc, supplier)
         k = (acc, an["pos"], an["services"])
         r = rows.get(k)
