@@ -114,6 +114,12 @@ async def documents_upload(file: UploadFile = File(...)):
 
 _PAGE_CACHE: dict = {}   # (key, n) -> rendered PNG bytes
 
+@app.post("/api/documents/archive-set")
+def documents_archive_set(ref: str, undo: str = "false"):
+    from . import documents as docs
+    docs.archive_set(ref, archived=(undo != "true"))
+    return docs.grouped()
+
 @app.post("/api/documents/regroup")
 async def documents_regroup(key: str, request: Request):
     from . import documents as docs

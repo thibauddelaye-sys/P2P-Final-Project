@@ -189,6 +189,7 @@
   .rcptseg button.on{background:var(--bordeaux);color:#fff}
 .acctbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:13px}
 .acctbar .rcptseg{margin-bottom:0}
+.bh-actions{display:inline-flex;gap:8px;align-items:center}
   /* --- per-delivery counted-by --- */
   .rcptby{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
   .cntby{width:150px;padding:4px 9px;border:1px solid var(--rule);border-radius:6px;font-family:inherit;font-size:12.5px;color:var(--ink)}
@@ -330,12 +331,19 @@ function renderDocsPage(){
     <div class="tile good"><div class="lab">Matched sets</div><div class="val">${Math.max(complete-exc,0)}</div></div>
     <div class="tile alert"><div class="lab">Exceptions</div><div class="val">${exc+loose.length}</div></div>
     <div class="tile"><div class="lab">Direct expenses</div><div class="val">${direct.length}</div></div>`;
-  const groups=DOCS.groups||[];
-  $('#doc-groups').innerHTML=groups.length?groups.map(groupBlock).join(''):'<div class="note" style="margin-top:14px">No documents yet. Email them to your mailbox, then click "Check inbox" — or load the sample set.</div>';
-  $('#doc-direct').innerHTML=direct.length?`<div class="setblock ok" style="margin-top:14px">
+  const allGroups=DOCS.groups||[];
+  const actGroups=allGroups.filter(g=>!g.archived), archGroups=allGroups.filter(g=>g.archived);
+  const shownGroups=SET_VIEW==='archived'?archGroups:actGroups;
+  if(allGroups.length){
+    const segBar=`<div class="acctbar" style="margin-top:14px"><div class="rcptseg"><button class="${SET_VIEW==='active'?'on':''}" onclick="setSetView('active')">Active (${actGroups.length})</button><button class="${SET_VIEW==='archived'?'on':''}" onclick="setSetView('archived')">Archived (${archGroups.length})</button></div></div>`;
+    $('#doc-groups').innerHTML=segBar+(shownGroups.length?shownGroups.map(groupBlock).join(''):`<div class="note" style="margin-top:6px">${SET_VIEW==='archived'?'No archived sets yet. Use “Archive set” on a matched set to file it here.':'Nothing active — every set has been archived.'}</div>`);
+  }else{
+    $('#doc-groups').innerHTML='<div class="note" style="margin-top:14px">No documents yet. Email them to your mailbox, then click "Check inbox" — or load the sample set.</div>';
+  }
+  $('#doc-direct').innerHTML=(SET_VIEW!=='archived'&&direct.length)?`<div class="setblock ok" style="margin-top:14px">
     <div class="blockhead"><div class="bh-left"><span class="tag ok">direct expense · no PO</span> <span class="setref">Overhead invoices</span> <span class="setsup">· booked straight to the journal</span></div></div>
     <div class="rows">${direct.map(directRow).join('')}</div></div>`:'';
-  $('#doc-loose').innerHTML=loose.length?`<div class="setblock exc" style="margin-top:14px">
+  $('#doc-loose').innerHTML=(SET_VIEW!=='archived'&&loose.length)?`<div class="setblock exc" style="margin-top:14px">
     <div class="blockhead"><div class="bh-left"><span class="tag bad">missing order</span> <span class="setref">Invoice without a PO</span></div></div>
     <div class="rows">${loose.map(docRow).join('')}</div>
     <div class="blocknote bad">A goods invoice should reference a purchase order and delivery note — investigate or request the order.</div></div>`:'';
@@ -361,6 +369,7 @@ function groupBlock(g){
   const cls=!g.complete?'inc':(g.match.status==='MATCHED'?'ok':'exc');
   const rows=TYPE_ORDER.map(t=>{const d=g.documents.find(x=>x.doc_type===t);return d?docRow(d):missRow(t);}).join('');
   const cmp=g.complete?`<button class="ghost mini" onclick="openCompare('${g.po_reference}')">⇄ Compare</button>`:'';
+  const arch=g.complete?(g.archived?`<button class="ghost mini" onclick="archiveSet('${g.po_reference}',false)">Unarchive</button>`:`<button class="ghost mini" onclick="archiveSet('${g.po_reference}',true)">Archive set</button>`):'';
   let note='';
   if(g.complete&&g.match){
     const fl=g.match.lines.filter(l=>l.flags.length);
@@ -369,7 +378,7 @@ function groupBlock(g){
       :'<div class="blocknote ok">All '+g.match.lines.length+' lines reconcile — ordered = delivered = billed, prices match.</div>';
   }
   return `<div class="setblock ${cls}">
-    <div class="blockhead"><div class="bh-left">${statusPill(g)} <span class="setref">${g.po_reference}</span> <span class="setsup">· ${g.supplier||'—'}</span></div>${cmp}</div>
+    <div class="blockhead"><div class="bh-left">${statusPill(g)} <span class="setref">${g.po_reference}</span> <span class="setsup">· ${g.supplier||'—'}</span></div><span class="bh-actions">${cmp}${arch}</span></div>
     <div class="rows">${rows}</div>${note}</div>`;
 }
 function docRow(d){
@@ -516,6 +525,7 @@ async function regroupDoc(key, ref){
 let ACCT={invoices:[],count:0,options:{accounts:[],pos:[],services:[],inv:[]}};
 let ACCT_EDIT=null;
 let ACCT_VIEW='active';
+let SET_VIEW='active';
 async function loadAccounting(){try{const r=await fetch('/api/accounting');ACCT=await r.json();renderAccounting();}catch(e){}}
 function renderAccounting(){
   const inv=ACCT.invoices||[];
@@ -534,6 +544,7 @@ function renderAccounting(){
   $('#acct-list').innerHTML=(inv.length?seg:'')+(list.length?list.map(acctBlock).join(''):(inv.length?msg:''));
 }
 function setAcctView(v){ACCT_VIEW=v;renderAccounting();}
+function setSetView(v){SET_VIEW=v;renderDocsPage();}
 
 function _optAcc(val){
   const list=(ACCT.options&&ACCT.options.accounts)||[];let has=false;
@@ -620,6 +631,7 @@ async function acctSaveEdit(key){
 async function postEntry(key){try{const r=await fetch('/api/accounting/post?key='+encodeURIComponent(key),{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
 async function undoPost(key){try{const r=await fetch('/api/accounting/post?key='+encodeURIComponent(key)+'&undo=true',{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
 async function archiveEntry(key,on){try{const r=await fetch('/api/accounting/archive?key='+encodeURIComponent(key)+'&undo='+(on?'false':'true'),{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
+async function archiveSet(ref,on){try{const r=await fetch('/api/documents/archive-set?ref='+encodeURIComponent(ref)+'&undo='+(on?'false':'true'),{method:'POST'});DOCS=await r.json();renderDocsPage();}catch(e){}}
 async function exportJournal(scope){
   try{
     const r=await fetch('/api/accounting/export?scope='+(scope||'new'),{method:'POST'});

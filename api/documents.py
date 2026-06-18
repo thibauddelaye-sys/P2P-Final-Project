@@ -277,7 +277,7 @@ def grouped() -> dict:
         out.append({"po_reference": ref,
                     "supplier": next((d.get("supplier_name") for d in docs if d.get("supplier_name")), None),
                     "documents": docs, "present": sorted(t for t in types if t),
-                    "complete": complete, "match": three_way(docs) if complete else None})
+                    "complete": complete, "archived": bool(docs) and all(d.get("set_archived") for d in docs), "match": three_way(docs) if complete else None})
     orphans = []
     for d in loose:
         if d.get("doc_type") == "invoice":
@@ -732,6 +732,20 @@ def export_stock(scope="new"):
     if targets: _save_state()
     fname = "stock_in_" + dt.datetime.utcnow().strftime("%Y%m%d_%H%M") + ".csv"
     return chr(65279) + buf.getvalue(), len(targets), fname
+
+def archive_set(ref, archived=True):
+    """Archive/unarchive a whole matched set (group) on the 3-way page. Independent of
+    the accounting and goods-receipt archives — uses its own per-document flag."""
+    n = _norm(ref)
+    if not n:
+        return False
+    hit = False
+    for d in STORE.values():
+        if _norm(d.get("po_reference")) == n:
+            d["set_archived"] = bool(archived); hit = True
+    if hit:
+        _save_state()
+    return hit
 
 def archive_delivery(key, archived=True):
     d = STORE.get(key)
