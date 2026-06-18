@@ -692,8 +692,18 @@ def _build_dispute_message(key, to, subject, body):
 def _send_via_resend(key, to, subject, body):
     """Send over Resend's HTTPS API (port 443) -- works on hosts that block outbound SMTP."""
     import urllib.request, urllib.error
+    from email.utils import parseaddr
+    from email.header import Header
     api_key = os.getenv("RESEND_API_KEY")
     sender = os.getenv("RESEND_FROM", "onboarding@resend.dev")
+    # Resend requires an ASCII From field -> RFC 2047-encode a non-ASCII display name
+    # (e.g. "Maison Lumière") so accents survive while the header stays pure ASCII.
+    _name, _addr = parseaddr(sender)
+    if _name and _addr:
+        try:
+            _name.encode("ascii")
+        except UnicodeEncodeError:
+            sender = Header(_name, "utf-8").encode() + " <" + _addr + ">"
     payload = {"from": sender, "to": [to], "subject": subject or "", "text": body or ""}
     atts = [{"filename": fn, "content": base64.standard_b64encode(content).decode()}
             for fn, content, _m in _dispute_attachments(key)]
