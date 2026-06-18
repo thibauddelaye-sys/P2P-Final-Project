@@ -1,69 +1,57 @@
-# Maison Lumière — AP & Stock Tool (functional prototype)
+# Final Project — Maison Lumière "P2P"
+### AI-Assisted Accounts-Payable & Inventory Automation for Luxury Hospitality
+*Ironhack — AI Consulting & Integration · Thibaud Delaye*
 
-The **working tool** behind the Project 5 business case: an AI-assisted accounts-payable +
-inventory system for an independent 5★ hotel. Where Project 5 *presents the case* for adopting
-AI, this repo *is the tool* — it reads real invoices, proposes entries, runs a 3-way match,
-tracks stock, and issues stock by barcode scan.
+A working AI tool that reads supplier invoices, proposes accounting entries, runs a 3-way match, controls goods receipt and drafts supplier dispute e-mails for an independent 5★ hotel — **AI reads, humans decide.** This repository holds the **deliverables**; the application source lives in a separate repo (linked below).
 
-> Demo system: **synthetic data, real logic, real AI**. No real company/personal data.
+---
 
-## What it does
-- **Reception** — drop an invoice (PDF/JPG/PNG) → an LLM reads it and proposes the accounting
-  entry (account + VAT); optional match against a purchase order. *AI reads, humans decide.*
-- **3-way match** — every invoice line checked vs ordered vs received; flags overbilling,
-  price variance, short delivery; quantifies € caught before payment.
-- **Stock & reorder** — live balances, reorder suggestions.
-- **Scan** — phone camera scans a product barcode → issues stock → triggers reorder.
+## 📁 File map
 
-## Run locally
-```bash
-pip install -r requirements.txt
-python generate_and_match.py            # builds data/ (seed 42)
-export ANTHROPIC_API_KEY=sk-...         # for AI invoice reading
-uvicorn api.main:app --reload --port 8100
-# open http://localhost:8100
+```
+final-project-thibaud-delaye/
+├── README.md                         ← this file map
+├── use_case_definition.md            #1 — business problem, profile, solution, stakeholders, success criteria, scope
+├── poc/
+│   ├── poc_documentation.md          #2 — the (code-based) proof of concept: tools, steps, AI capability, limits, how to run
+│   └── poc_screenshots/              #2 — [ADD: annotated screenshots of each page]
+├── roi_risk_assessment.md            #3 — costs, business value, ROI (12 & 36 mo), assumptions, break-even, 9-risk matrix
+├── compliance/
+│   ├── eu_ai_act_compliance.md       #4 — classification (limited risk/transparency), reasoning, obligations, conformity summary, tech-doc outline
+│   └── gdpr_documentation.md         #5 — data flow map, processing register, DPIA, data-subject rights, third-party transfers
+├── strategic_plan.md                 #6 — deployment phases, timeline, go-to-market, stakeholder comms, KPIs, commercialisation
+├── presentation.pdf / .pptx          #7 — [TO BUILD: slide deck for Week 9 Day 5]
+└── mvp/                              #8 (stretch)
+    ├── README.md                     working-MVP overview (also usable to refresh the application repo's README)
+    └── mvp_documentation.md          architecture, setup, run, error handling, limitations, how it extends the POC
 ```
 
-## Deploy (Railway — one service)
-- New service from this repo; Procfile handles startup.
-- Set env var **ANTHROPIC_API_KEY** (for the Reception page's AI reading).
-- The web cockpit is served by the same service at `/`.
+**Application source (the working MVP / POC):** https://github.com/thibauddelaye-sys/P2P-Final-Project
+**Live demo:** https://p2p-inventory-production.up.railway.app
 
-## Structure
-```
-api/main.py              FastAPI: match / stock / scan / extract (LLM) / serves the web UI
-web/index.html           the cockpit (Reception · 3-Way Match · Stock · Scan)
-scripts:                 generate_and_match.py  (synthetic data + 3-way match + stock ledger)
-data/                    generated CSVs + printable barcodes
-barcodes_print.html      printable demo barcodes to scan
-```
+---
 
-Separate from the Project 5 deliverable repo by design. Foundation for the Ironhack Final Project.
+## ✅ Submission checklist
 
-## Email capture (Reception → "Check inbox")
+**Core**
+- [x] `use_case_definition.md`
+- [x] `poc/poc_documentation.md` — _add demo-recording link + screenshots_
+- [x] `roi_risk_assessment.md`
+- [x] `compliance/eu_ai_act_compliance.md`
+- [x] `compliance/gdpr_documentation.md`
+- [x] `strategic_plan.md`
+- [ ] `presentation.[pdf/pptx]` — **to build** (deck synthesising the above)
 
-Suppliers email invoices to a dedicated mailbox; the tool reads new ones with the same AI flow.
+**Stretch**
+- [x] `mvp/mvp_documentation.md` + `mvp/README.md`
+- [x] GitHub repository link → the application repo above (organised code, `requirements.txt`, `.env.example`, commit history)
 
-- Endpoint: `POST /api/email/poll` — pulls **unseen** attachments (PDF/JPG/PNG), runs each through the LLM extraction, returns the proposed entries. Marks them read so they aren't reprocessed.
-- Module: `api/email_intake.py` (IMAP fetch, standard library only).
-- Config (environment variables, **never commit secrets**):
-  - `IMAP_HOST` (optional, default `imap.gmail.com`)
-  - `IMAP_USER` — the dedicated mailbox address
-  - `IMAP_PASSWORD` — a Google **app password** (requires 2-Step Verification; not the account password)
+**Still to add by hand**
+1. **Demo recording (2–5 min)** — paste the link into `poc/poc_documentation.md`.
+2. **POC screenshots** — drop annotated images into `poc/poc_screenshots/`.
+3. **Presentation deck** — `presentation.pptx` (next deliverable).
+4. *(Optional)* refresh the application repo's `README.md` using `mvp/README.md` (the current one still mentions removed Stock/Scan pages).
 
-On the Reception page, click **Check inbox**: new emails are read and shown as proposed entries. The simulated list remains as a fallback when no mailbox is configured.
+---
 
-> Test with **synthetic** invoices only — real supplier documents contain third-party PII (names, IBAN, VAT) and must not be sent to the API or committed.
-
-## Documents page — capture everything, match automatically
-
-Beyond the single-invoice Reception flow, the **Documents** page captures *all* document types
-emailed to the mailbox (purchase orders, delivery notes, invoices), classifies and extracts each
-with the LLM, and **groups them automatically by purchase-order number**. A complete set
-(PO + delivery note + invoice) is run through a 3-way match; exceptions (e.g. a price billed above
-what was ordered) are flagged with the € caught before payment. Click any document to inspect what
-the AI read.
-
-Endpoints: `POST /api/documents/poll` (capture from mailbox), `GET /api/documents` (grouped view),
-`POST /api/documents/sample` (load a demo set — works with no mailbox/API key), `DELETE /api/documents`.
-State is in-memory (single-worker demo); re-polling re-reads and de-dupes, so it is safe to repeat.
+> All operational KPIs are a **modelled pilot projection**; market-evidence figures are **real and cited** (mostly directional vendor/US benchmarks, flagged as such). Demo runs on **synthetic data** — no real company or personal data. Compliance documents are first-pass assessments, **not legal opinions**.
