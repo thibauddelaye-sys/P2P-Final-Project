@@ -701,7 +701,8 @@ def _send_via_resend(key, to, subject, body):
         payload["attachments"] = atts
     req = urllib.request.Request("https://api.resend.com/emails",
         data=json.dumps(payload).encode(), method="POST",
-        headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"})
+        headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json",
+                 "Accept": "application/json", "User-Agent": "resend-python:2.32.2"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             r.read()
