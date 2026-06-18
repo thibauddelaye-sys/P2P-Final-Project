@@ -135,11 +135,17 @@ def extract_document(raw: bytes, filename: str, content_type: str = "") -> dict:
         block = {"type":"image","source":{"type":"base64","media_type":media,"data":b64}}
     from anthropic import Anthropic
     msg = Anthropic().messages.create(
-        model=os.getenv("EXTRACT_MODEL","claude-haiku-4-5-20251001"), max_tokens=1600,
+        model=os.getenv("EXTRACT_MODEL","claude-haiku-4-5-20251001"), max_tokens=8000,
         messages=[{"role":"user","content":[block,{"type":"text","text":DOC_PROMPT}]}])
     text = "".join(b.text for b in msg.content if getattr(b,"type","")=="text")
     text = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except Exception:
+        # tolerate a truncated/imperfect response: recover doc_type, po_reference, supplier
+        # and whatever line items came through, so 3-way grouping still works on big documents.
+        from json_repair import repair_json
+        return json.loads(repair_json(text))
 
 def ingest(items: list[dict], source: str = "email") -> int:
     """items: from email_intake.fetch_invoice_attachments (content, filename, from, subject, msg_id)."""
