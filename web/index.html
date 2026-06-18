@@ -103,7 +103,7 @@
   .rnum{flex:1 1 auto;font-weight:600;color:var(--ink)}
   .rsrc{flex:0 0 auto}
   .rdate{flex:0 0 86px;color:var(--muted);font-size:12px;text-align:right}
-  .rview{flex:0 0 40px;text-align:right}
+  .rview{flex:0 0 auto;display:inline-flex;gap:6px;align-items:center;justify-content:flex-end}
   .drow.miss{opacity:.55} .drow.miss .rnum{color:var(--muted);font-weight:400}
   .blocknote{padding:10px 16px;font-size:13px;border-top:1px solid var(--rule)}
   .blocknote.ok{color:var(--green)} .blocknote.bad{color:var(--ink)}
@@ -113,6 +113,8 @@
 .iconbtn.del{border-color:transparent;color:var(--muted);padding:2px 6px;opacity:0;transition:opacity .12s}
 .drow:hover .iconbtn.del{opacity:1}
 .iconbtn.del:hover{border-color:var(--red);color:var(--red);background:var(--card)}
+#intake-table .intake-del{text-align:right;width:34px}
+#intake-table tr:hover .iconbtn.del{opacity:1}
   button.mini{padding:5px 12px;font-size:12.5px}
   #hover-prev{position:fixed;display:none;width:304px;background:#fff;border:1px solid var(--rule);border-radius:9px;box-shadow:0 16px 44px rgba(0,0,0,.30);overflow:hidden;z-index:60}
   .prevwrap{position:relative;cursor:crosshair;line-height:0}
@@ -347,8 +349,7 @@ function directRow(it){
     <span class="rnum">${it.doc_number||''} <span class="note" style="font-weight:400">· ${it.supplier_name||''}</span></span>
     <span class="rsrc note" style="font-size:11.5px">${acc}</span>
     <span class="rdate">${it.gross!=null?eur(it.gross):''}</span>
-    <span class="rview">${view}</span>
-    <span class="rdel"><button class="iconbtn del" title="Supprimer ce document" onclick="delDoc('${it.key}')">✕</button></span></div>`;
+    <span class="rview">${view}</span></div>`;
 }
 
 function statusPill(g){
@@ -379,8 +380,7 @@ function docRow(d){
     <span class="rnum">${d.doc_number||d.filename||''}</span>
     <span class="rsrc">${srcBadge(d.source)}</span>
     <span class="rdate">${d.doc_date||''}</span>
-    <span class="rview"><button class="iconbtn" title="Rattacher à une autre commande" onclick="openRegroup('${d.key}')">⇄</button>${view}</span>
-    <span class="rdel"><button class="iconbtn del" title="Supprimer ce document" onclick="delDoc('${d.key}')">✕</button></span></div>`;
+    <span class="rview"><button class="iconbtn" title="Rattacher à une autre commande" onclick="openRegroup('${d.key}')">⇄</button>${view}</span></div>`;
 }
 function missRow(t){return `<div class="drow miss"><span class="rtype">${TYPE_LABEL[t]}</span><span class="rnum">— missing —</span><span class="rsrc"></span><span class="rdate"></span><span class="rview"></span></div>`;}
 
@@ -823,14 +823,14 @@ function renderIntake(){
   const empty=$('#intake-empty'); if(empty)empty.style.display=docs.length?'none':'block';
   docs.sort((a,b)=>(b.captured_at||'').localeCompare(a.captured_at||''));
   const t=$('#intake-table'); if(!t)return;
-  t.innerHTML=docs.length?`<tr><th>Document</th><th>Type</th><th>Source</th><th>Type of expense</th><th>Supplier</th><th>Doc&nbsp;date</th><th>Captured</th></tr>`+
+  t.innerHTML=docs.length?`<tr><th>Document</th><th>Type</th><th>Source</th><th>Type of expense</th><th>Supplier</th><th>Doc&nbsp;date</th><th>Captured</th><th></th></tr>`+
     docs.map(d=>`<tr><td><b>${d.doc_number||d.filename||''}</b></td>
       <td><span class="tag">${TYPE_BADGE[d.doc_type]||'Document'}</span></td>
       <td>${srcBadge(d.source)}</td>
       <td>${d.expense_type?'<span class="exp">'+d.expense_type+'</span>':'<span class="note">—</span>'}</td>
       <td>${d.supplier_name||'—'}</td>
       <td>${d.doc_date||'—'}</td>
-      <td><span class="note">${fmtCap(d.captured_at)}</span></td></tr>`).join(''):'';
+      <td><span class="note">${fmtCap(d.captured_at)}</span></td><td class="intake-del"><button class="iconbtn del" title="Supprimer ce document" onclick="delDoc('${d.key}')">✕</button></td></tr>`).join(''):'';
 }
 function renderAll(){renderIntake();renderDocsPage();}
 
