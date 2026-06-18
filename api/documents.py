@@ -135,6 +135,23 @@ DOC_PROMPT = (
     "Use null if a field is absent. Do not invent values."
 )
 
+# --- optional LangSmith tracing: activates only when LANGSMITH_TRACING=true ---
+try:
+    from langsmith import traceable as _traceable
+    from langsmith.wrappers import wrap_anthropic as _wrap_anthropic
+except Exception:  # langsmith absent -> no-ops; the app runs exactly as before
+    def _traceable(*a, **k):
+        if a and callable(a[0]) and len(a) == 1 and not k:
+            return a[0]
+        def _deco(fn): return fn
+        return _deco
+    def _wrap_anthropic(c): return c
+
+def _ls_trace_inputs(inputs):
+    """Never log the raw document bytes in the trace -- keep only light metadata."""
+    return {"filename": inputs.get("filename"), "content_type": inputs.get("content_type")}
+
+@_traceable(name="extract_document", process_inputs=_ls_trace_inputs)
 def extract_document(raw: bytes, filename: str, content_type: str = "") -> dict:
     if not os.getenv("ANTHROPIC_API_KEY"):
         raise RuntimeError("ANTHROPIC_API_KEY not configured")
@@ -146,7 +163,8 @@ def extract_document(raw: bytes, filename: str, content_type: str = "") -> dict:
         media = "image/png" if "png" in ct or fn.endswith(".png") else "image/jpeg"
         block = {"type":"image","source":{"type":"base64","media_type":media,"data":b64}}
     from anthropic import Anthropic
-    msg = Anthropic().messages.create(
+    client = _wrap_anthropic(Anthropic())
+    msg = client.messages.create(
         model=os.getenv("EXTRACT_MODEL","claude-haiku-4-5-20251001"), max_tokens=8000,
         messages=[{"role":"user","content":[block,{"type":"text","text":DOC_PROMPT}]}])
     text = "".join(b.text for b in msg.content if getattr(b,"type","")=="text")
