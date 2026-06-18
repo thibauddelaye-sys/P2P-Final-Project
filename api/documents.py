@@ -732,7 +732,11 @@ def send_dispute_email(key, to, subject, body):
         raise RuntimeError("no recipient email")
     if os.getenv("RESEND_API_KEY"):
         return _send_via_resend(key, to, subject, body)
-    return _send_via_smtp(key, to, subject, body)
+    try:
+        return _send_via_smtp(key, to, subject, body)
+    except OSError as e:
+        raise RuntimeError("Outbound SMTP is blocked here (Railway non-Pro plans block it). "
+                           "Set RESEND_API_KEY on the service and redeploy to send over HTTPS. [" + str(e) + "]")
 
 def dispute_pdf(key):
     d = STORE.get(key)

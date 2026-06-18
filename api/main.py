@@ -235,6 +235,12 @@ def receipts_export(scope: str = "new"):
     csv_text, n, fname = docs.export_stock(scope=scope)
     return {"count": n, "filename": fname, "csv": csv_text, "receipts": docs.receipts()}
 
+@app.get("/api/email/status")
+def email_status():
+    return {"resend": bool(os.getenv("RESEND_API_KEY")),
+            "smtp_creds": bool((os.getenv("SMTP_USER") or os.getenv("IMAP_USER")) and (os.getenv("SMTP_PASSWORD") or os.getenv("IMAP_PASSWORD"))),
+            "resend_from": os.getenv("RESEND_FROM", "onboarding@resend.dev")}
+
 @app.post("/api/receipts/send-dispute")
 async def receipts_send_dispute(key: str, request: Request):
     from . import documents as docs
