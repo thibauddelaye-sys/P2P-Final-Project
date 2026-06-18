@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=EB+Garamond:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
   :root{
     --paper:#FBF8F2;--paper2:#F4ECDF;--paper3:#FAF4E9;--card:#FFFFFF;
@@ -63,8 +62,6 @@
   .err{background:#f4e0e2;border-left:3px solid var(--red);padding:11px 14px;border-radius:0 7px 7px 0;color:var(--red-deep);font-size:13.5px}
   .ok-msg{background:#e3efe7;border-left:3px solid var(--green);padding:11px 14px;border-radius:0 7px 7px 0;color:var(--green);font-size:13.5px}
   .inbox-item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--rule);font-size:13.5px}
-  .scanwrap{max-width:380px}
-  #reader{border-radius:10px;overflow:hidden;border:1px solid var(--rule)}
   .result{font-family:var(--display);font-size:22px;color:var(--red-deep)}
   .spin{display:inline-block;width:15px;height:15px;border:2px solid var(--gold-soft);border-top-color:var(--red);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
   @keyframes sp{to{transform:rotate(360deg)}}
@@ -209,7 +206,7 @@
       <button class="active" data-p="0"><span class="n">I</span>Reception</button>
       <button data-p="1"><span class="n">II</span>3-Way Match</button>
       <button data-p="5"><span class="n">III</span>Goods receipt</button>
-      <button data-p="4"><span class="n">IV</span>Accounting</button>
+      <button data-p="4"><span class="n">IV</span>Accounting posting</button>
     </nav>
     <div class="foot"><div id="health">connecting…</div><div style="margin-top:10px;opacity:.85">AI reads,<br>humans decide.</div></div>
   </aside>
@@ -236,35 +233,6 @@
       </div>
     </section>
 
-    <!-- PAGE III — STOCK -->
-    <section class="page" data-page="2">
-      <div class="eyebrow">Inventory · live balances</div>
-      <h1>Stock &amp; Reorder</h1>
-      <div class="sub">Balances per item after receipts and consumption. Items at or below their reorder point are flagged with a suggested order.</div>
-      <div class="tiles" id="stock-tiles"></div>
-      <div class="panel"><h3>Items</h3><div style="overflow:auto;max-height:460px"><table id="stock-table"></table></div></div>
-    </section>
-
-    <!-- PAGE IV — SCAN -->
-    <section class="page" data-page="3">
-      <div class="eyebrow">Movement · scan to issue</div>
-      <h1>Scan</h1>
-      <div class="sub">Point your camera at a product barcode to issue it from stock. Stock decrements live and triggers a reorder when it crosses the threshold.</div>
-      <div class="twocol">
-        <div class="scanwrap panel">
-          <h3>Camera</h3>
-          <div id="reader"></div>
-          <div style="margin-top:12px">
-            <button class="act" id="scan-start">Start camera</button>
-            <button class="ghost" id="scan-stop" style="margin-left:10px;display:none">Stop</button>
-          </div>
-          <div style="margin-top:14px" class="note">No camera? Enter a barcode:
-            <div style="margin-top:8px"><input type="text" id="ean-manual" placeholder="13-digit EAN"> <button class="act" id="ean-go">Issue</button></div>
-          </div>
-        </div>
-        <div class="panel"><h3>Last issued</h3><div id="scan-result"><div class="note">Nothing scanned yet.</div></div></div>
-      </div>
-    </section>
     <!-- PAGE II — 3-WAY MATCH (live, from captured documents) -->
     <section class="page" data-page="1">
       <div class="eyebrow">Control · invoice ↔ delivery ↔ order</div>
@@ -828,47 +796,6 @@ function renderIntake(){
 }
 function renderAll(){renderIntake();renderDocsPage();}
 
-
-/* ---------- STOCK ---------- */
-async function loadStock(){
-  const d=await (await fetch('/api/stock')).json();
-  $('#stock-tiles').innerHTML=`
-    <div class="tile"><div class="lab">SKUs tracked</div><div class="val">${d.rows.length}</div></div>
-    <div class="tile alert"><div class="lab">Below reorder</div><div class="val">${d.below_reorder}</div></div>
-    <div class="tile"><div class="lab">To reorder (units)</div><div class="val">${d.rows.reduce((a,r)=>a+r.suggest_order,0)}</div></div>
-    <div class="tile good"><div class="lab">In good standing</div><div class="val">${d.rows.length-d.below_reorder}</div></div>`;
-  let rows=d.rows.map(r=>`<tr class="${r.below_reorder?'flagged':''}"><td>${r.name}</td><td>${r.category}</td><td>${r.balance}</td>
-    <td>${r.reorder_point}</td><td>${r.par_level}</td>
-    <td>${r.below_reorder?'<span class="tag bad">reorder</span>':'<span class="tag ok">ok</span>'}</td>
-    <td>${r.suggest_order>0?'<b>'+r.suggest_order+'</b>':'—'}</td></tr>`).join('');
-  $('#stock-table').innerHTML=`<tr><th>Item</th><th>Category</th><th>Balance</th><th>Reorder pt</th><th>Par</th><th>Status</th><th>Suggest order</th></tr>${rows}`;
-}
-
-/* ---------- SCAN ---------- */
-let scanner=null;
-async function doScan(ean){
-  try{const r=await fetch('/api/scan?ean='+encodeURIComponent(ean)+'&qty=1',{method:'POST'});
-    if(r.status===404){$('#scan-result').innerHTML='<div class="err">Barcode '+ean+' is not in the catalogue.</div>';return;}
-    const d=await r.json();
-    $('#scan-result').innerHTML=`<div class="result">${d.name}</div>
-      <div class="note" style="margin:6px 0 12px">EAN ${d.ean13} · issued 1 to ${d.outlet}</div>
-      <div class="tiles" style="grid-template-columns:1fr 1fr"><div class="tile ${d.below_reorder?'alert':'good'}"><div class="lab">New balance</div><div class="val">${d.balance}</div></div>
-      <div class="tile"><div class="lab">Reorder point</div><div class="val">${d.reorder_point}</div></div></div>
-      ${d.below_reorder?'<div class="err" style="margin-top:12px">Below reorder — suggest ordering <b>'+d.suggest_order+'</b> units.</div>':'<div class="ok-msg" style="margin-top:12px">Stock healthy.</div>'}`;
-    loadStock();
-  }catch(e){$('#scan-result').innerHTML='<div class="err">Network error: '+e+'</div>';}
-}
-$('#ean-go').onclick=()=>{const v=$('#ean-manual').value.trim();if(v)doScan(v);};
-$('#scan-start').onclick=()=>{
-  if(!window.Html5Qrcode){$('#scan-result').innerHTML='<div class="err">Scanner library did not load.</div>';return;}
-  scanner=new Html5Qrcode("reader");
-  scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:250,height:160}},
-    txt=>{doScan(txt);},()=>{}).then(()=>{$('#scan-start').style.display='none';$('#scan-stop').style.display='inline';})
-    .catch(e=>{$('#scan-result').innerHTML='<div class="err">Cannot open camera: '+e+'</div>';});
-};
-$('#scan-stop').onclick=stopScan;
-function stopScan(){if(scanner){scanner.stop().then(()=>scanner.clear()).catch(()=>{});scanner=null;
-  const a=$('#scan-start'),b=$('#scan-stop');if(a)a.style.display='inline';if(b)b.style.display='none';}}
 
 boot();
 </script>

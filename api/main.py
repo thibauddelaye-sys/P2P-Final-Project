@@ -1,4 +1,4 @@
-"""P2P + Inventory API — 3-way match, stock ledger, barcode scan, AI document extraction.
+"""P2P + Inventory API — 3-way match, goods receipt, GL imputation & AI document extraction.
 Separate service from the Project 5 repo. Demo: synthetic data, real logic, real AI extraction.
 
 Run:  pip install -r requirements.txt  &&  uvicorn api.main:app --reload --port 8100
@@ -6,94 +6,15 @@ Run:  pip install -r requirements.txt  &&  uvicorn api.main:app --reload --port 
 from __future__ import annotations
 import base64, json, os
 from pathlib import Path
-import pandas as pd
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-DATA = Path(os.getenv("DATA_DIR", Path(__file__).resolve().parents[1] / "data"))
 app = FastAPI(title="P2P & Inventory API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-def load():
-    d = {}
-    for name in ["products","purchase_orders","delivery_notes","invoices",
-                 "three_way_match","stock_ledger","reorder_status"]:
-        d[name] = pd.read_csv(DATA / f"{name}.csv")
-    return d
-DB = load()
-# live stock balances held in memory so scanning actually decrements during the demo
-STOCK = {r["sku"]: int(r["balance"]) for _, r in DB["reorder_status"].iterrows()}
-PRODUCTS = {r["sku"]: r for _, r in DB["products"].iterrows()}
-EAN2SKU = {str(r["ean13"]): r["sku"] for _, r in DB["products"].iterrows()}
-
-def recs(df): return json.loads(df.to_json(orient="records"))
-
 @app.get("/health")
-def health(): return {"status": "ok", "invoice_lines": int(len(DB["three_way_match"]))}
-
-# ---- 3-way match ----------------------------------------------------------
-@app.get("/api/match")
-def match():
-    m = DB["three_way_match"]
-    return {
-        "summary": {
-            "lines": int(len(m)),
-            "matched": int((m["status"] == "MATCHED").sum()),
-            "exceptions": int((m["status"] == "EXCEPTION").sum()),
-            "overbilled": int(m["flags"].str.contains("OVERBILLED").sum()),
-            "price_variance": int(m["flags"].str.contains("PRICE_VARIANCE").sum()),
-            "short_delivery": int(m["flags"].str.contains("SHORT_DELIVERY").sum()),
-            "overpay_caught_eur": round(float(m["overpay_eur"].sum()), 2),
-        },
-        "rows": recs(m),
-    }
-
-# ---- stock & reorder ------------------------------------------------------
-@app.get("/api/stock")
-def stock():
-    rows = []
-    for sku, bal in STOCK.items():
-        p = PRODUCTS[sku]
-        rows.append({"sku": sku, "name": p["name"], "category": p["category"],
-                     "ean13": str(p["ean13"]), "balance": bal,
-                     "reorder_point": int(p["reorder_point"]), "par_level": int(p["par_level"]),
-                     "below_reorder": bal <= int(p["reorder_point"]),
-                     "suggest_order": max(int(p["par_level"]) - bal, 0) if bal <= int(p["reorder_point"]) else 0})
-    return {"rows": rows, "below_reorder": sum(1 for r in rows if r["below_reorder"])}
-
-@app.get("/api/ledger")
-def ledger(sku: str | None = None, limit: int = 100):
-    l = DB["stock_ledger"].sort_values("date", ascending=False)
-    if sku: l = l[l["sku"] == sku]
-    return recs(l.head(limit))
-
-@app.get("/api/pos")
-def pos():
-    """Purchase orders grouped with their lines — used to match an uploaded invoice."""
-    po = DB["purchase_orders"].merge(
-        DB["products"][["sku", "name"]], on="sku", how="left")
-    out = []
-    for po_id, g in po.groupby("po_id"):
-        out.append({"po_id": po_id, "vendor": g.iloc[0]["vendor"],
-                    "lines": [{"sku": r["sku"], "name": r["name"],
-                               "qty_ordered": int(r["qty_ordered"]),
-                               "unit_price": float(r["unit_price"])} for _, r in g.iterrows()]})
-    return out
-
-# ---- barcode scan ---------------------------------------------------------
-@app.post("/api/scan")
-def scan(ean: str, qty: int = 1, outlet: str = "Main Bar"):
-    """Scan a barcode -> issue stock (decrement). Returns product + new balance + reorder flag."""
-    sku = EAN2SKU.get(str(ean).strip())
-    if not sku:
-        raise HTTPException(404, f"Unknown barcode {ean}")
-    STOCK[sku] = max(STOCK[sku] - qty, 0)
-    p = PRODUCTS[sku]
-    bal = STOCK[sku]; rp = int(p["reorder_point"])
-    return {"sku": sku, "name": p["name"], "ean13": str(ean), "issued": qty, "outlet": outlet,
-            "balance": bal, "reorder_point": rp, "below_reorder": bal <= rp,
-            "suggest_order": max(int(p["par_level"]) - bal, 0) if bal <= rp else 0}
+def health(): return {"status": "ok"}
 
 # ---- AI document extraction (real LLM) ------------------------------------
 EXTRACT_PROMPT = (
