@@ -114,6 +114,17 @@ async def documents_upload(file: UploadFile = File(...)):
 
 _PAGE_CACHE: dict = {}   # (key, n) -> rendered PNG bytes
 
+@app.post("/api/documents/regroup")
+async def documents_regroup(key: str, request: Request):
+    from . import documents as docs
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    ref = (body or {}).get("po_reference", "") if isinstance(body, dict) else ""
+    docs.set_po_reference(key, ref)
+    return docs.grouped()
+
 @app.get("/api/documents/pagecount")
 def documents_pagecount(key: str):
     from . import documents as docs

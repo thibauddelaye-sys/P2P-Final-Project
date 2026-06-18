@@ -97,6 +97,18 @@ def delete_doc(key):
         print("[persist] delete_doc failed:", e)
     _save_state(); return True
 
+def set_po_reference(key, ref):
+    """Manually (re)assign a document's order reference so the user can merge a
+    mis-grouped document (e.g. an unreadable scan whose reference was misread)
+    into the correct order group. Empty ref makes it a loose document again."""
+    d = STORE.get(key)
+    if not d:
+        return False
+    d["po_reference"] = (ref or "").strip() or None
+    d["po_manual"] = True
+    _save_state()
+    return True
+
 def clear():
     """Empty the store and delete its persisted files."""
     STORE.clear(); RAW.clear()

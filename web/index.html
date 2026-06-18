@@ -155,6 +155,9 @@
   .mimg{display:block;width:100%;height:auto;background:#fff}
   .pagenav{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:10px}
   .pagenav .note{min-width:90px;text-align:center}
+  .regroup-opts{display:flex;flex-wrap:wrap;gap:8px}
+  .regroup-manual{display:flex;gap:8px}
+  .regroup-manual input{flex:1;padding:8px 10px;border:1px solid #d9cdb8;border-radius:7px;background:#fff;font-size:13px;font-family:inherit}
   .mlens{position:absolute;display:none;width:170px;height:170px;border:2px solid var(--gold);border-radius:50%;background-repeat:no-repeat;background-color:#fff;box-shadow:0 6px 22px rgba(0,0,0,.4);pointer-events:none}
   .mhint{position:absolute;left:0;right:0;bottom:0;font-size:10.5px;text-align:center;color:#fff;background:rgba(44,37,32,.55);padding:3px 0;pointer-events:none}
   .namein{width:200px;padding:5px 9px;border:1px solid var(--rule);border-radius:6px;font-size:13px;font-family:inherit;color:var(--ink)}
@@ -376,7 +379,7 @@ function docRow(d){
     <span class="rnum">${d.doc_number||d.filename||''}</span>
     <span class="rsrc">${srcBadge(d.source)}</span>
     <span class="rdate">${d.doc_date||''}</span>
-    <span class="rview">${view}</span>
+    <span class="rview"><button class="iconbtn" title="Rattacher à une autre commande" onclick="openRegroup('${d.key}')">⇄</button>${view}</span>
     <span class="rdel"><button class="iconbtn del" title="Supprimer ce document" onclick="delDoc('${d.key}')">✕</button></span></div>`;
 }
 function missRow(t){return `<div class="drow miss"><span class="rtype">${TYPE_LABEL[t]}</span><span class="rnum">— missing —</span><span class="rsrc"></span><span class="rdate"></span><span class="rview"></span></div>`;}
@@ -484,6 +487,30 @@ function gotoPage(n){if(!PREV_KEY)return;PREV_PAGE=Math.max(0,Math.min(n,PREV_TO
 function prevPage(){gotoPage(PREV_PAGE-1);}
 function nextPage(){gotoPage(PREV_PAGE+1);}
 function closeDoc(){PREV_KEY=null;$('#doc-modal').classList.remove('show');$('#doc-modal-body').classList.remove('wide');}
+function _normJS(s){return (s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
+function openRegroup(key){
+  const d=DOCMAP[key]; if(!d)return; hidePrev();
+  const cur=_normJS(d.po_reference); const seen={};
+  const targets=(DOCS.groups||[]).map(g=>{
+    const po=(g.documents||[]).find(x=>x.doc_type==='purchase_order')||(g.documents||[])[0]||{};
+    return {ref:(po.po_reference||g.po_reference||''), norm:g.po_reference, supplier:g.supplier};
+  }).filter(t=>t.norm && t.norm!==cur && !seen[t.norm] && (seen[t.norm]=1));
+  const opts=targets.length?targets.map(t=>`<button class="act mini" onclick="regroupDoc('${key}','${(t.ref||'').replace(/'/g,"&#39;")}')">${t.ref||t.norm} · ${t.supplier||'—'}</button>`).join(' '):'<span class="note">Aucune autre commande pour le moment.</span>';
+  $('#doc-modal-body').innerHTML=`<span class="x" onclick="closeDoc()">✕</span>
+    <div class="eyebrow">Rattacher à une commande</div>
+    <h3 style="margin-top:4px">${d.doc_number||d.filename||''}</h3>
+    <div class="note">${d.supplier_name||''}${d.po_reference?' · actuellement : '+d.po_reference:' · non rattaché'}</div>
+    <div style="margin:16px 0 6px"><div class="eyebrow" style="margin-bottom:8px">Commandes existantes</div><div class="regroup-opts">${opts}</div></div>
+    <div style="margin-top:14px"><div class="eyebrow" style="margin-bottom:6px">ou saisir une référence</div>
+      <div class="regroup-manual"><input id="regroup-input" type="text" placeholder="ex. PO-2024-0207" onkeydown="if(event.key==='Enter')regroupDoc('${key}',this.value)">
+      <button class="act mini ghost" onclick="regroupDoc('${key}',document.getElementById('regroup-input').value)">Rattacher</button></div></div>`;
+  $('#doc-modal').classList.add('show');
+}
+async function regroupDoc(key, ref){
+  ref=(ref||'').trim(); if(!ref)return;
+  try{ await fetch('/api/documents/regroup?key='+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({po_reference:ref})}); }catch(e){}
+  closeDoc(); await refreshAll();
+}
 
 /* ---------- ACCOUNTING POSTING ---------- */
 let ACCT={invoices:[],count:0,options:{accounts:[],pos:[],services:[],inv:[]}};
