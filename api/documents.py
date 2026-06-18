@@ -221,7 +221,7 @@ def _inv_item(d, cl, orphan=False):
           "supplier_name": d.get("supplier_name"), "doc_date": d.get("doc_date"),
           "po_reference": d.get("po_reference"), "filename": d.get("filename"),
           "line_items": d.get("line_items"), "total_incl_vat": d.get("total_incl_vat"),
-          "error": d.get("error"), "has_file": d.get("has_file"), "source": d.get("source"),
+          "error": d.get("error"), "has_file": d.get("has_file"), "source": d.get("source"), "captured_at": d.get("captured_at"),
           "flow": cl["flow"], "requires_po": cl["requires_po"], "basis": cl["basis"],
           "gross": e.get("gross"), "account": l0.get("account"), "account_label": l0.get("label")}
     if orphan: it["orphan_doc"] = True
@@ -254,7 +254,7 @@ def grouped() -> dict:
                             "supplier_name": d.get("supplier_name"), "doc_date": d.get("doc_date"),
                             "po_reference": d.get("po_reference"), "filename": d.get("filename"),
                             "line_items": d.get("line_items"), "total_incl_vat": d.get("total_incl_vat"),
-                            "has_file": d.get("has_file"), "source": d.get("source"), "orphan_doc": True})
+                            "has_file": d.get("has_file"), "source": d.get("source"), "captured_at": d.get("captured_at"), "orphan_doc": True})
     return {"groups": out, "direct": direct, "loose": orphans, "count": len(STORE)}
 
 # ---- sample data (mirrors the 6 demo PDFs) so the page works without email/API ----

@@ -292,21 +292,22 @@ const TYPE_ORDER=['purchase_order','delivery_note','invoice'];
 const FLAG_LABEL={PRICE_VARIANCE:'price differs',OVERBILLED_QTY:'billed &gt; delivered',NOT_ON_PO:'not on the order',NOT_ON_DELIVERY:'not delivered'};
 
 async function loadDocuments(){try{const r=await fetch('/api/documents');DOCS=await r.json();renderAll();}catch(e){}}
+async function refreshAll(){try{const [d,a,r]=await Promise.all([fetch('/api/documents').then(x=>x.json()),fetch('/api/accounting').then(x=>x.json()),fetch('/api/receipts').then(x=>x.json())]);DOCS=d;ACCT=a;RCPT=r;renderAll();renderAccounting();renderReceipts();}catch(e){}}
 async function pollDocuments(){
   const st=$('#doc-status');st.innerHTML='<span class="spin"></span> Checking mailbox…';
   try{
     const r=await fetch('/api/documents/poll',{method:'POST'});
     if(r.status===503){st.innerHTML='<span class="tag warn">No mailbox connected</span> set IMAP_USER / IMAP_PASSWORD on the server';return;}
     if(!r.ok){const e=await r.json();st.innerHTML='<div class="err">Mailbox error: '+(e.detail||r.status)+'</div>';return;}
-    DOCS=await r.json();st.innerHTML='<span class="tag ok">'+(DOCS.added||0)+' new · '+DOCS.count+' captured</span>';renderAll();
+    const j=await r.json();st.innerHTML='<span class="tag ok">'+(j.added||0)+' new · '+(j.count||0)+' captured</span>';await refreshAll();
   }catch(e){st.innerHTML='<div class="err">Network error: '+e+'</div>';}
 }
-async function sampleDocuments(){const r=await fetch('/api/documents/sample',{method:'POST'});DOCS=await r.json();$('#doc-status').innerHTML='<span class="note">Sample set loaded.</span>';renderAll();}
+async function sampleDocuments(){await fetch('/api/documents/sample',{method:'POST'});$('#doc-status').innerHTML='<span class="note">Sample set loaded.</span>';await refreshAll();}
 async function delDoc(key){
   if(!confirm('Supprimer ce document ? Cette action est définitive.'))return;
-  try{const r=await fetch('/api/documents/item?key='+encodeURIComponent(key),{method:'DELETE'});DOCS=await r.json();renderAll();}catch(e){}
+  try{await fetch('/api/documents/item?key='+encodeURIComponent(key),{method:'DELETE'});await refreshAll();}catch(e){}
 }
-async function clearDocuments(){const r=await fetch('/api/documents',{method:'DELETE'});DOCS=await r.json();$('#doc-status').innerHTML='<span class="note">Cleared.</span>';renderAll();}
+async function clearDocuments(){await fetch('/api/documents',{method:'DELETE'});$('#doc-status').innerHTML='<span class="note">Cleared.</span>';await refreshAll();}
 
 function fileUrl(key){return '/api/documents/file?key='+encodeURIComponent(key);}
 
@@ -743,7 +744,7 @@ async function saveCount(key){
 $('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');
   const i=+b.dataset.p;document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',+p.dataset.page===i));
-  if(i===5)loadReceipts(); if(i===4)loadAccounting();});
+  if(i===5)loadReceipts(); if(i===4)loadAccounting(); if(i===0||i===1)loadDocuments();});
 
 /* ---------- RECEPTION ---------- */
 const TYPE_BADGE={purchase_order:'Order',delivery_note:'Delivery note',invoice:'Invoice',unknown:'Document'};
@@ -779,20 +780,22 @@ async function checkInboxIntake(){
   }catch(e){st.innerHTML='<div class="err">Network error: '+e+'</div>';}
 }
 
-function allDocs(){const a=[];(DOCS.groups||[]).forEach(g=>g.documents.forEach(d=>a.push(d)));(DOCS.loose||[]).forEach(d=>a.push(d));return a;}
+function allDocs(){const a=[];(DOCS.groups||[]).forEach(g=>g.documents.forEach(d=>a.push(d)));(DOCS.direct||[]).forEach(d=>a.push(d));(DOCS.loose||[]).forEach(d=>a.push(d));return a;}
+function fmtCap(iso){if(!iso)return '—';const d=new Date(String(iso).endsWith('Z')?iso:iso+'Z');return isNaN(d)?String(iso).replace('T',' ').slice(0,16):d.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}
 function srcBadge(s){return s==='manual'?'<span class="badge-manual">✋ Manual</span>':'<span class="badge-email">📧 Email</span>';}
 function renderIntake(){
   const docs=allDocs();
   const empty=$('#intake-empty'); if(empty)empty.style.display=docs.length?'none':'block';
   docs.sort((a,b)=>(b.captured_at||'').localeCompare(a.captured_at||''));
   const t=$('#intake-table'); if(!t)return;
-  t.innerHTML=docs.length?`<tr><th>Document</th><th>Type</th><th>Source</th><th>Type of expense</th><th>Supplier</th><th>Date</th></tr>`+
+  t.innerHTML=docs.length?`<tr><th>Document</th><th>Type</th><th>Source</th><th>Type of expense</th><th>Supplier</th><th>Doc&nbsp;date</th><th>Captured</th></tr>`+
     docs.map(d=>`<tr><td><b>${d.doc_number||d.filename||''}</b></td>
       <td><span class="tag">${TYPE_BADGE[d.doc_type]||'Document'}</span></td>
       <td>${srcBadge(d.source)}</td>
       <td>${d.expense_type?'<span class="exp">'+d.expense_type+'</span>':'<span class="note">—</span>'}</td>
       <td>${d.supplier_name||'—'}</td>
-      <td>${d.doc_date||'—'}</td></tr>`).join(''):'';
+      <td>${d.doc_date||'—'}</td>
+      <td><span class="note">${fmtCap(d.captured_at)}</span></td></tr>`).join(''):'';
 }
 function renderAll(){renderIntake();renderDocsPage();}
 
