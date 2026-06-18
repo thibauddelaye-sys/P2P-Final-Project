@@ -114,6 +114,21 @@ async def documents_upload(file: UploadFile = File(...)):
 
 _PAGE_CACHE: dict = {}   # (key, n) -> rendered PNG bytes
 
+@app.get("/api/documents/pagecount")
+def documents_pagecount(key: str):
+    from . import documents as docs
+    item = docs.RAW.get(key)
+    if not item:
+        return {"pages": 0}
+    ctype, content = item
+    if (ctype or "").startswith("image/"):
+        return {"pages": 1}
+    try:
+        import fitz
+        return {"pages": fitz.open(stream=content, filetype="pdf").page_count}
+    except Exception:
+        return {"pages": 1}
+
 @app.get("/api/documents/page")
 def documents_page(key: str, n: int = 0):
     """Render a document page to PNG (for the interactive magnifier preview)."""

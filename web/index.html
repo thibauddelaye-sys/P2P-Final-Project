@@ -153,6 +153,8 @@
   /* --- modal magnifier + name input --- */
   .mwrap{position:relative;cursor:crosshair;line-height:0;border:1px solid var(--rule);border-radius:8px;overflow:hidden}
   .mimg{display:block;width:100%;height:auto;background:#fff}
+  .pagenav{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:10px}
+  .pagenav .note{min-width:90px;text-align:center}
   .mlens{position:absolute;display:none;width:170px;height:170px;border:2px solid var(--gold);border-radius:50%;background-repeat:no-repeat;background-color:#fff;box-shadow:0 6px 22px rgba(0,0,0,.4);pointer-events:none}
   .mhint{position:absolute;left:0;right:0;bottom:0;font-size:10.5px;text-align:center;color:#fff;background:rgba(44,37,32,.55);padding:3px 0;pointer-events:none}
   .namein{width:200px;padding:5px 9px;border:1px solid var(--rule);border-radius:6px;font-size:13px;font-family:inherit;color:var(--ink)}
@@ -381,6 +383,7 @@ function missRow(t){return `<div class="drow miss"><span class="rtype">${TYPE_LA
 
 function pageUrl(key,n){return '/api/documents/page?key='+encodeURIComponent(key)+'&n='+(n||0);}
 let prevTimer=null, prevWired=false;
+let PREV_KEY=null, PREV_PAGE=0, PREV_TOTAL=1;
 function _wirePanel(){
   if(prevWired)return; const p=$('#hover-prev'); if(!p)return;
   p.addEventListener('mouseenter',()=>clearTimeout(prevTimer));
@@ -418,14 +421,14 @@ function hidePrev(){clearTimeout(prevTimer);prevTimer=setTimeout(_hideNow,200);}
 function _hideNow(){const p=$('#hover-prev');if(p){p.style.display='none';p.innerHTML='';}}
 
 function openFile(key){
-  const d=DOCMAP[key];if(!d)return;hidePrev();
+  const d=DOCMAP[key];if(!d)return;hidePrev();PREV_KEY=key;PREV_PAGE=0;PREV_TOTAL=1;
   const rows=(d.line_items||[]).map(li=>`<tr><td>${li.description??''}</td><td style="text-align:right">${li.quantity??''}</td><td style="text-align:right">${li.unit_price!=null?eur(li.unit_price):'—'}</td></tr>`).join('');
   const viewer=d.has_file?`<div class="mwrap"><img class="mimg" src="${pageUrl(key,0)}" alt=""><div class="mlens"></div><div class="mhint">Move the mouse to zoom</div></div>`:'<div class="note">No file stored for this document.</div>';
   $('#doc-modal-body').innerHTML=`<span class="x" onclick="closeDoc()">✕</span>
     <div class="eyebrow">${TYPE_LABEL[d.doc_type]||'Document'}</div>
     <h3 style="margin-top:4px">${d.doc_number||d.filename||''}</h3>
     <div class="note">${d.supplier_name||''}${d.doc_date?' · '+d.doc_date:''}${d.po_reference?' · order '+d.po_reference:''}</div>
-    <div class="docview"><div class="docview-pdf">${viewer}</div>
+    <div class="docview"><div class="docview-pdf">${viewer}${d.has_file?'<div class="pagenav" id="pagenav" style="display:none"><button class="ghost mini" onclick="prevPage()">\u2039 Préc.</button><span id="pagelabel" class="note"></span><button class="ghost mini" onclick="nextPage()">Suiv. \u203a</button></div>':''}</div>
       <div class="docview-data"><div class="eyebrow" style="margin-bottom:6px">What the AI read</div>
         <table><tr><th>Designation</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit</th></tr>${rows||'<tr><td class="note" colspan="3">No lines extracted.</td></tr>'}</table>
         ${d.total_incl_vat!=null?'<div style="text-align:right;margin-top:8px"><b>Total TTC '+eur(d.total_incl_vat)+'</b></div>':''}
@@ -433,6 +436,7 @@ function openFile(key){
       </div></div>`;
   $('#doc-modal-body').classList.add('wide');$('#doc-modal').classList.add('show');
   wireModalLens();
+  if(d.has_file){fetch('/api/documents/pagecount?key='+encodeURIComponent(key)).then(x=>x.json()).then(pc=>{PREV_TOTAL=(pc&&pc.pages)||1;renderPageNav();}).catch(()=>{});}
 }
 function wireModalLens(){
   const wrap=document.querySelector('#doc-modal-body .mwrap'); if(!wrap)return;
@@ -475,7 +479,11 @@ function openCompare(ref){
     ${g.match.overpay_eur?'<div style="text-align:right;margin-top:12px"><b class="mis">Overbilled by '+eur(g.match.overpay_eur)+'</b></div>':'<div style="text-align:right;margin-top:12px;color:var(--green)"><b>Everything reconciles</b></div>'}`;
   $('#doc-modal-body').classList.add('wide');$('#doc-modal').classList.add('show');
 }
-function closeDoc(){$('#doc-modal').classList.remove('show');$('#doc-modal-body').classList.remove('wide');}
+function renderPageNav(){const nav=document.getElementById('pagenav');if(!nav)return;if(PREV_TOTAL>1){nav.style.display='flex';const lab=document.getElementById('pagelabel');if(lab)lab.textContent='Page '+(PREV_PAGE+1)+' / '+PREV_TOTAL;}else{nav.style.display='none';}}
+function gotoPage(n){if(!PREV_KEY)return;PREV_PAGE=Math.max(0,Math.min(n,PREV_TOTAL-1));const wrap=document.querySelector('#doc-modal-body .mwrap');const img=wrap&&wrap.querySelector('.mimg');const lens=wrap&&wrap.querySelector('.mlens');if(img){const u=pageUrl(PREV_KEY,PREV_PAGE);img.src=u;if(lens)lens.style.backgroundImage='url('+u+')';}renderPageNav();}
+function prevPage(){gotoPage(PREV_PAGE-1);}
+function nextPage(){gotoPage(PREV_PAGE+1);}
+function closeDoc(){PREV_KEY=null;$('#doc-modal').classList.remove('show');$('#doc-modal-body').classList.remove('wide');}
 
 /* ---------- ACCOUNTING POSTING ---------- */
 let ACCT={invoices:[],count:0,options:{accounts:[],pos:[],services:[],inv:[]}};
