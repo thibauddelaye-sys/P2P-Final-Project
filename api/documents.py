@@ -147,6 +147,27 @@ def extract_document(raw: bytes, filename: str, content_type: str = "") -> dict:
         from json_repair import repair_json
         return json.loads(repair_json(text))
 
+def _identity(doc):
+    """Logical identity of a document: supplier + type + number (None if unknown/no number)."""
+    num = _norm(doc.get("doc_number")); typ = doc.get("doc_type")
+    if not num or typ in (None, "", "unknown"): return None
+    return (_norm(doc.get("supplier_name")), typ, num)
+
+def _drop_same_identity(doc, keep_key):
+    """Remove any previously-captured copy of the same logical document (same supplier+type+number)
+    stored under a different key, so re-capturing (email then drag, or a re-send) replaces it
+    instead of creating a duplicate. Latest capture wins."""
+    ident = _identity(doc)
+    if not ident: return
+    for k in [k for k, d in list(STORE.items()) if k != keep_key and _identity(d) == ident]:
+        STORE.pop(k, None); RAW.pop(k, None); RAW.pop("attach::" + k, None)
+        try:
+            for kk in (k, "attach::" + k):
+                fp = os.path.join(FILES_DIR, _fkey(kk))
+                if os.path.exists(fp): os.remove(fp)
+        except Exception as e:
+            print("[persist] dedup cleanup failed:", e)
+
 def ingest(items: list[dict], source: str = "email") -> int:
     """items: from email_intake.fetch_invoice_attachments (content, filename, from, subject, msg_id)."""
     added = 0
@@ -163,7 +184,7 @@ def ingest(items: list[dict], source: str = "email") -> int:
                     "expense_type":expense_category(doc.get("line_items")),
                     "captured_at":dt.datetime.utcnow().isoformat(timespec="seconds")})
         ct = _ctype(it["filename"]); doc["raw_ctype"] = ct
-        STORE[key] = doc; RAW[key] = (ct, it["content"]); _save_raw(key, ct, it["content"]); added += 1
+        STORE[key] = doc; RAW[key] = (ct, it["content"]); _save_raw(key, ct, it["content"]); _drop_same_identity(doc, key); added += 1
     if added: _save_state()
     return added
 
@@ -180,7 +201,7 @@ def ingest_upload(filename: str, content: bytes, content_type: str = "") -> dict
                 "source":"manual", "expense_type":expense_category(doc.get("line_items")),
                 "captured_at":dt.datetime.utcnow().isoformat(timespec="seconds")})
     ct = content_type or _ctype(filename); doc["raw_ctype"] = ct
-    STORE[key] = doc; RAW[key] = (ct, content); _save_raw(key, ct, content); _save_state()
+    STORE[key] = doc; RAW[key] = (ct, content); _save_raw(key, ct, content); _drop_same_identity(doc, key); _save_state()
     return doc
 
 def _norm(s): return re.sub(r"[^A-Z0-9]", "", (s or "").upper())
