@@ -245,8 +245,8 @@ async def receipts_send_dispute(key: str, request: Request):
     to = (body or {}).get("to", "") if isinstance(body, dict) else ""
     subject = (body or {}).get("subject", "") if isinstance(body, dict) else ""
     text = (body or {}).get("body", "") if isinstance(body, dict) else ""
-    if not (os.getenv("SMTP_USER") or os.getenv("IMAP_USER")):
-        raise HTTPException(503, "Sending not configured — set IMAP_USER / IMAP_PASSWORD (or SMTP_USER / SMTP_PASSWORD) on the server")
+    if not (os.getenv("RESEND_API_KEY") or os.getenv("SMTP_USER") or os.getenv("IMAP_USER")):
+        raise HTTPException(503, "Email sending not configured — set RESEND_API_KEY (works on all Railway plans), or SMTP credentials (Pro plan)")
     if not to:
         raise HTTPException(400, "No supplier email — add the supplier's email first")
     try:

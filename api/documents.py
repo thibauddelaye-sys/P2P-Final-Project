@@ -655,35 +655,63 @@ def attach_receipt(key, filename, content, content_type=""):
     d["attachment"] = {"filename": filename, "ctype": ct}
     _save_state(); return True
 
-def _build_dispute_message(key, to, subject, body):
-    """Build the dispute email (MIME) with the photo and the formal dispute PDF attached."""
-    from email.message import EmailMessage
-    user = os.getenv("SMTP_USER") or os.getenv("IMAP_USER") or ""
-    msg = EmailMessage()
-    msg["From"] = user; msg["To"] = to; msg["Subject"] = subject or ""
-    msg.set_content(body or "")
+def _dispute_attachments(key):
+    """Collect dispute attachments: the constat PDF (photo embedded) and the raw photo,
+    as (filename, bytes, mime) tuples."""
+    out = []
     d = STORE.get(key, {})
     num = re.sub(r"[^A-Za-z0-9_-]", "", str(d.get("doc_number") or "BL")) or "BL"
     try:
         pdf = dispute_pdf(key)
         if pdf:
-            msg.add_attachment(pdf, maintype="application", subtype="pdf", filename="constat-" + num + ".pdf")
+            out.append(("constat-" + num + ".pdf", pdf, "application/pdf"))
     except Exception as e:
-        print("[smtp] dispute pdf attach failed:", e)
+        print("[mail] dispute pdf failed:", e)
     item = RAW.get("attach::" + key)
     if item:
         ctype, content = item
-        mt, _, st = (ctype or "image/jpeg").partition("/")
         fn = ((d.get("attachment") or {}).get("filename")) or "photo.jpg"
+        out.append((fn, content, ctype or "image/jpeg"))
+    return out
+
+def _build_dispute_message(key, to, subject, body):
+    """Build the dispute email (MIME) with the photo and the formal dispute PDF attached (SMTP path)."""
+    from email.message import EmailMessage
+    user = os.getenv("SMTP_USER") or os.getenv("IMAP_USER") or ""
+    msg = EmailMessage()
+    msg["From"] = user; msg["To"] = to; msg["Subject"] = subject or ""
+    msg.set_content(body or "")
+    for fn, content, mime in _dispute_attachments(key):
+        mt, _, st = (mime or "application/octet-stream").partition("/")
         try:
-            msg.add_attachment(content, maintype=(mt or "image"), subtype=(st or "jpeg"), filename=fn)
+            msg.add_attachment(content, maintype=(mt or "application"), subtype=(st or "octet-stream"), filename=fn)
         except Exception as e:
-            print("[smtp] photo attach failed:", e)
+            print("[mail] attach failed:", e)
     return msg
 
-def send_dispute_email(key, to, subject, body):
-    """Send the goods-receipt dispute email from the app itself (SMTP), photo + PDF attached.
-    Reuses the Gmail app password set for IMAP (SMTP_USER/SMTP_PASSWORD override if present)."""
+def _send_via_resend(key, to, subject, body):
+    """Send over Resend's HTTPS API (port 443) -- works on hosts that block outbound SMTP."""
+    import urllib.request, urllib.error
+    api_key = os.getenv("RESEND_API_KEY")
+    sender = os.getenv("RESEND_FROM", "onboarding@resend.dev")
+    payload = {"from": sender, "to": [to], "subject": subject or "", "text": body or ""}
+    atts = [{"filename": fn, "content": base64.standard_b64encode(content).decode()}
+            for fn, content, _m in _dispute_attachments(key)]
+    if atts:
+        payload["attachments"] = atts
+    req = urllib.request.Request("https://api.resend.com/emails",
+        data=json.dumps(payload).encode(), method="POST",
+        headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            r.read()
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("Resend %s: %s" % (e.code, e.read().decode(errors="ignore")[:300]))
+    except Exception as e:
+        raise RuntimeError("Resend request failed: %s" % e)
+    return True
+
+def _send_via_smtp(key, to, subject, body):
     import smtplib, ssl
     user = os.getenv("SMTP_USER") or os.getenv("IMAP_USER")
     pwd = os.getenv("SMTP_PASSWORD") or os.getenv("IMAP_PASSWORD")
@@ -691,13 +719,20 @@ def send_dispute_email(key, to, subject, body):
     port = int(os.getenv("SMTP_PORT", "587"))
     if not (user and pwd):
         raise RuntimeError("SMTP not configured")
-    if not to:
-        raise RuntimeError("no recipient email")
     msg = _build_dispute_message(key, to, subject, body)
     ctx = ssl.create_default_context()
     with smtplib.SMTP(host, port, timeout=30) as srv:
         srv.starttls(context=ctx); srv.login(user, pwd); srv.send_message(msg)
     return True
+
+def send_dispute_email(key, to, subject, body):
+    """Send the dispute email with the photo + dispute PDF attached. Prefers Resend's HTTPS API
+    (required on hosts that block outbound SMTP, e.g. Railway non-Pro); falls back to SMTP."""
+    if not to:
+        raise RuntimeError("no recipient email")
+    if os.getenv("RESEND_API_KEY"):
+        return _send_via_resend(key, to, subject, body)
+    return _send_via_smtp(key, to, subject, body)
 
 def dispute_pdf(key):
     d = STORE.get(key)
