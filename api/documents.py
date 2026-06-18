@@ -655,6 +655,50 @@ def attach_receipt(key, filename, content, content_type=""):
     d["attachment"] = {"filename": filename, "ctype": ct}
     _save_state(); return True
 
+def _build_dispute_message(key, to, subject, body):
+    """Build the dispute email (MIME) with the photo and the formal dispute PDF attached."""
+    from email.message import EmailMessage
+    user = os.getenv("SMTP_USER") or os.getenv("IMAP_USER") or ""
+    msg = EmailMessage()
+    msg["From"] = user; msg["To"] = to; msg["Subject"] = subject or ""
+    msg.set_content(body or "")
+    d = STORE.get(key, {})
+    num = re.sub(r"[^A-Za-z0-9_-]", "", str(d.get("doc_number") or "BL")) or "BL"
+    try:
+        pdf = dispute_pdf(key)
+        if pdf:
+            msg.add_attachment(pdf, maintype="application", subtype="pdf", filename="constat-" + num + ".pdf")
+    except Exception as e:
+        print("[smtp] dispute pdf attach failed:", e)
+    item = RAW.get("attach::" + key)
+    if item:
+        ctype, content = item
+        mt, _, st = (ctype or "image/jpeg").partition("/")
+        fn = ((d.get("attachment") or {}).get("filename")) or "photo.jpg"
+        try:
+            msg.add_attachment(content, maintype=(mt or "image"), subtype=(st or "jpeg"), filename=fn)
+        except Exception as e:
+            print("[smtp] photo attach failed:", e)
+    return msg
+
+def send_dispute_email(key, to, subject, body):
+    """Send the goods-receipt dispute email from the app itself (SMTP), photo + PDF attached.
+    Reuses the Gmail app password set for IMAP (SMTP_USER/SMTP_PASSWORD override if present)."""
+    import smtplib, ssl
+    user = os.getenv("SMTP_USER") or os.getenv("IMAP_USER")
+    pwd = os.getenv("SMTP_PASSWORD") or os.getenv("IMAP_PASSWORD")
+    host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    if not (user and pwd):
+        raise RuntimeError("SMTP not configured")
+    if not to:
+        raise RuntimeError("no recipient email")
+    msg = _build_dispute_message(key, to, subject, body)
+    ctx = ssl.create_default_context()
+    with smtplib.SMTP(host, port, timeout=30) as srv:
+        srv.starttls(context=ctx); srv.login(user, pwd); srv.send_message(msg)
+    return True
+
 def dispute_pdf(key):
     d = STORE.get(key)
     if not d or d.get("doc_type") != "delivery_note": return None

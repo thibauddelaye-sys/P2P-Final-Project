@@ -235,6 +235,26 @@ def receipts_export(scope: str = "new"):
     csv_text, n, fname = docs.export_stock(scope=scope)
     return {"count": n, "filename": fname, "csv": csv_text, "receipts": docs.receipts()}
 
+@app.post("/api/receipts/send-dispute")
+async def receipts_send_dispute(key: str, request: Request):
+    from . import documents as docs
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    to = (body or {}).get("to", "") if isinstance(body, dict) else ""
+    subject = (body or {}).get("subject", "") if isinstance(body, dict) else ""
+    text = (body or {}).get("body", "") if isinstance(body, dict) else ""
+    if not (os.getenv("SMTP_USER") or os.getenv("IMAP_USER")):
+        raise HTTPException(503, "Sending not configured — set IMAP_USER / IMAP_PASSWORD (or SMTP_USER / SMTP_PASSWORD) on the server")
+    if not to:
+        raise HTTPException(400, "No supplier email — add the supplier's email first")
+    try:
+        docs.send_dispute_email(key, to, subject, text)
+    except Exception as e:
+        raise HTTPException(500, "Could not send the email: " + str(e))
+    return {"sent": True, "to": to}
+
 @app.get("/api/receipts/dispute.pdf")
 def receipts_dispute(key: str):
     import re as _re

@@ -753,19 +753,35 @@ function renderMail(){
   const mailto='mailto:'+MAIL_TO+'?subject='+encodeURIComponent(MAIL_SUBJ)+'&body='+encodeURIComponent(MAIL_BODY);
   const noMail=MAIL_LANG==='en'?'no supplier email on file \u2014 add it in your mail app':'aucun email fournisseur enregistre \u2014 a ajouter dans votre messagerie';
   const tip=MAIL_LANG==='en'?'Tip: click <b>Copy email text</b>, paste it into your email (Gmail, Outlook\u2026) and attach the downloaded <b>Dispute PDF</b> \u2014 email drafts cannot carry attachments.':'Astuce : cliquez <b>Copy email text</b>, collez dans votre messagerie (Gmail, Outlook\u2026) et joignez le <b>Dispute PDF</b> telecharge \u2014 un brouillon ne peut pas porter de piece jointe.';
+  const tip2=MAIL_LANG==='en'?'<b>Send now</b> emails the supplier directly with the photo and dispute PDF attached. To send it yourself instead, use <b>Copy email text</b> / <b>Open in mail app</b> and attach the downloaded <b>Dispute PDF</b>.':'<b>Send now</b> envoie le mail au fournisseur directement, photo et PDF de constat joints. Pour envoyer manuellement, utilisez <b>Copy email text</b> / <b>Open in mail app</b> et joignez le <b>Dispute PDF</b>.';
   $('#doc-modal-body').innerHTML=`<span class="x" onclick="closeDoc()">\u2715</span>
     <div class="eyebrow">Email to supplier</div>
     <div class="rcptseg" style="margin:6px 0 4px"><button class="${MAIL_LANG==='fr'?'on':''}" onclick="setMailLang('fr')">Francais</button><button class="${MAIL_LANG==='en'?'on':''}" onclick="setMailLang('en')">English</button></div>
     <h3 style="margin-top:4px">${MAIL_SUBJ}</h3>
-    <div class="note" style="margin:2px 0 10px">To: ${MAIL_TO?MAIL_TO:'<i>'+noMail+'</i>'}</div>
+    <div class="note" style="margin:2px 0 4px">To:</div>
+    <input id="mailto" class="cntby" style="width:100%;margin-bottom:8px" value="${(MAIL_TO||'').replace(/"/g,'&quot;')}" placeholder="${noMail}">
     <textarea id="mailbody" class="maildraft">${MAIL_BODY.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea>
     <div class="acctactions" style="margin-top:10px">
-      <button id="copybtn" class="act mini" onclick="copyMail()">Copy email text</button>
+      <button id="sendbtn" class="act mini" onclick="sendDispute('${MAIL_KEY}')">\u2709 Send now \u2014 photo + PDF attached</button>
+      <button id="copybtn" class="act mini ghost" onclick="copyMail()">Copy email text</button>
       <a class="act mini ghost" href="${mailto}">Open in mail app</a>
     </div>
-    <div class="note" style="margin-top:10px">${tip}</div>`;
+    <div id="mailsend-status" class="note" style="margin-top:8px"></div>
+    <div class="note" style="margin-top:6px">${tip2}</div>`;
   $('#doc-modal-body').classList.remove('wide');
   $('#doc-modal').classList.add('show');
+}
+async function sendDispute(key){
+  const st=$('#mailsend-status'), btn=$('#sendbtn');
+  const to=($('#mailto')?$('#mailto').value:MAIL_TO).trim();
+  if(!to){if(st)st.innerHTML='<span class="mis">Add a recipient email first.</span>';return;}
+  const subject=MAIL_SUBJ, body=$('#mailbody')?$('#mailbody').value:MAIL_BODY;
+  if(btn)btn.disabled=true; if(st)st.innerHTML='<span class="spin"></span> Sending\u2026';
+  try{
+    const r=await fetch('/api/receipts/send-dispute?key='+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:to,subject:subject,body:body})});
+    if(r.ok){const j=await r.json();if(st)st.innerHTML='<span class="tag ok">Sent to '+(j.to||to)+' \u2713</span>';}
+    else{const e=await r.json().catch(()=>({}));if(st)st.innerHTML='<span class="mis">'+(e.detail||('Error '+r.status))+'</span>';if(btn)btn.disabled=false;}
+  }catch(e){if(st)st.innerHTML='<span class="mis">Network error.</span>';if(btn)btn.disabled=false;}
 }
 function copyMail(){
   const txt='Subject: '+MAIL_SUBJ+'\n\n'+($('#mailbody')?$('#mailbody').value:MAIL_BODY);
