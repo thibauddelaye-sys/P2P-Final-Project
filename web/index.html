@@ -333,10 +333,9 @@ function renderDocsPage(){
     <div class="tile"><div class="lab">Direct expenses</div><div class="val">${direct.length}</div></div>`;
   const allGroups=DOCS.groups||[];
   const actGroups=allGroups.filter(g=>!g.archived), archGroups=allGroups.filter(g=>g.archived);
-  const shownGroups=SET_VIEW==='archived'?archGroups:actGroups;
   if(allGroups.length){
-    const segBar=`<div class="acctbar" style="margin-top:14px"><div class="rcptseg"><button class="${SET_VIEW==='active'?'on':''}" onclick="setSetView('active')">Active (${actGroups.length})</button><button class="${SET_VIEW==='archived'?'on':''}" onclick="setSetView('archived')">Archived (${archGroups.length})</button></div></div>`;
-    $('#doc-groups').innerHTML=segBar+(shownGroups.length?shownGroups.map(groupBlock).join(''):`<div class="note" style="margin-top:6px">${SET_VIEW==='archived'?'No archived sets yet. Use “Archive set” on a matched set to file it here.':'Nothing active — every set has been archived.'}</div>`);
+    const segBar=`<div class="acctbar" style="margin-top:14px"><div class="rcptseg"><button class="${SET_VIEW==='active'?'on':''}" onclick="setSetView('active')">Active (${actGroups.length})</button><button class="${SET_VIEW==='archived'?'on':''}" onclick="setSetView('archived')">Archived (${archGroups.length})</button></div><input class="rcptsearch" placeholder="search PO / supplier / date" value="${SET_Q.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" oninput="setMatchSearch(this.value)"></div>`;
+    $('#doc-groups').innerHTML=segBar+'<div id="doc-grouplist"></div>';renderGroupList();
   }else{
     $('#doc-groups').innerHTML='<div class="note" style="margin-top:14px">No documents yet. Email them to your mailbox, then click "Check inbox" — or load the sample set.</div>';
   }
@@ -369,7 +368,8 @@ function groupBlock(g){
   const cls=!g.complete?'inc':(g.match.status==='MATCHED'?'ok':'exc');
   const rows=TYPE_ORDER.map(t=>{const d=g.documents.find(x=>x.doc_type===t);return d?docRow(d):missRow(t);}).join('');
   const cmp=g.complete?`<button class="ghost mini" onclick="openCompare('${g.po_reference}')">⇄ Compare</button>`:'';
-  const arch=g.complete?(g.archived?`<button class="ghost mini" onclick="archiveSet('${g.po_reference}',false)">Unarchive</button>`:`<button class="ghost mini" onclick="archiveSet('${g.po_reference}',true)">Archive set</button>`):'';
+  const isExc=g.complete&&g.match&&g.match.status==='EXCEPTION';
+  const arch=g.complete?(g.archived?`<button class="ghost mini" onclick="archiveSet('${g.po_reference}',false)">Unarchive</button>`:`<button class="ghost mini" onclick="${isExc?`promptArchive('${g.po_reference}')`:`archiveSet('${g.po_reference}',true)`}">Archive set</button>`):'';
   let note='';
   if(g.complete&&g.match){
     const fl=g.match.lines.filter(l=>l.flags.length);
@@ -377,6 +377,7 @@ function groupBlock(g){
       ?'<div class="blocknote bad">'+fl.map(l=>`🔍 <b>${l.description}</b> — ${l.flags.map(f=>FLAG_LABEL[f]||f).join(', ')}`).join('<br>')+'</div>'
       :'<div class="blocknote ok">All '+g.match.lines.length+' lines reconcile — ordered = delivered = billed, prices match.</div>';
   }
+  if(g.archive_reason) note+=`<div class="blocknote ok"><b>Control note</b> — ${(g.archive_reason+'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`;
   return `<div class="setblock ${cls}">
     <div class="blockhead"><div class="bh-left">${statusPill(g)} <span class="setref">${g.po_reference}</span> <span class="setsup">· ${g.supplier||'—'}</span></div><span class="bh-actions">${cmp}${arch}</span></div>
     <div class="rows">${rows}</div>${note}</div>`;
@@ -525,7 +526,7 @@ async function regroupDoc(key, ref){
 let ACCT={invoices:[],count:0,options:{accounts:[],pos:[],services:[],inv:[]}};
 let ACCT_EDIT=null;
 let ACCT_VIEW='active';
-let SET_VIEW='active';
+let SET_VIEW='active', SET_Q='';
 async function loadAccounting(){try{const r=await fetch('/api/accounting');ACCT=await r.json();renderAccounting();}catch(e){}}
 function renderAccounting(){
   const inv=ACCT.invoices||[];
@@ -545,6 +546,9 @@ function renderAccounting(){
 }
 function setAcctView(v){ACCT_VIEW=v;renderAccounting();}
 function setSetView(v){SET_VIEW=v;renderDocsPage();}
+function matchSetQ(g){const q=SET_Q.toLowerCase().trim();if(!q)return true;const docs=(g.documents||[]).map(d=>(d.doc_number||'')+' '+(d.doc_date||'')).join(' ');return [(g.po_reference||''),(g.supplier||''),docs].join(' ').toLowerCase().includes(q);}
+function renderGroupList(){const all=DOCS.groups||[];const act=all.filter(g=>!g.archived),arch=all.filter(g=>g.archived);const list=(SET_VIEW==='archived'?arch:act).filter(matchSetQ);const el=$('#doc-grouplist');if(!el)return;el.innerHTML=list.length?list.map(groupBlock).join(''):`<div class="note" style="margin-top:6px">${SET_Q.trim()?'No set matches your search.':(SET_VIEW==='archived'?'No archived sets yet.':'Nothing active — every set has been archived.')}</div>`;}
+function setMatchSearch(v){SET_Q=v||'';renderGroupList();}
 
 function _optAcc(val){
   const list=(ACCT.options&&ACCT.options.accounts)||[];let has=false;
@@ -631,7 +635,28 @@ async function acctSaveEdit(key){
 async function postEntry(key){try{const r=await fetch('/api/accounting/post?key='+encodeURIComponent(key),{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
 async function undoPost(key){try{const r=await fetch('/api/accounting/post?key='+encodeURIComponent(key)+'&undo=true',{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
 async function archiveEntry(key,on){try{const r=await fetch('/api/accounting/archive?key='+encodeURIComponent(key)+'&undo='+(on?'false':'true'),{method:'POST'});ACCT=await r.json();renderAccounting();}catch(e){}}
-async function archiveSet(ref,on){try{const r=await fetch('/api/documents/archive-set?ref='+encodeURIComponent(ref)+'&undo='+(on?'false':'true'),{method:'POST'});DOCS=await r.json();renderDocsPage();}catch(e){}}
+async function archiveSet(ref,on,reason){try{const r=await fetch('/api/documents/archive-set?ref='+encodeURIComponent(ref)+'&undo='+(on?'false':'true')+(reason?'&reason='+encodeURIComponent(reason):''),{method:'POST'});DOCS=await r.json();renderDocsPage();}catch(e){}}
+function promptArchive(ref){
+  const g=(DOCS.groups||[]).find(x=>x.po_reference===ref); if(!g)return;
+  const caught=(g.match&&g.match.overpay_eur!=null)?eur(g.match.overpay_eur):'';
+  $('#doc-modal-body').classList.remove('wide');
+  $('#doc-modal-body').innerHTML=`<span class="x" onclick="closeDoc()">✕</span>
+    <div class="eyebrow">Archive with documented control</div>
+    <h3 style="margin-top:4px">${ref} · ${g.supplier||'—'}</h3>
+    <div class="blocknote bad" style="margin:10px 0">This set still carries an unresolved exception${caught?` — ${caught} caught`:''}. To archive it, record why it is being accepted — this note is kept as evidence of the control.</div>
+    <textarea id="arch-reason" rows="3" placeholder="e.g., Agreed with supplier — credit note to follow on the next order" oninput="document.getElementById('arch-confirm').disabled=!this.value.trim()" style="width:100%;padding:10px 12px;border:1px solid var(--rule);border-radius:8px;font-family:inherit;font-size:13.5px;color:var(--ink);box-sizing:border-box;resize:vertical"></textarea>
+    <div style="margin-top:14px;display:flex;gap:10px;justify-content:flex-end">
+      <button class="ghost mini" onclick="closeDoc()">Cancel</button>
+      <button class="act mini" id="arch-confirm" disabled onclick="confirmArchive('${ref}')">Archive set</button>
+    </div>`;
+  $('#doc-modal').classList.add('show');
+  setTimeout(()=>{const t=document.getElementById('arch-reason');if(t)t.focus();},30);
+}
+function confirmArchive(ref){
+  const t=document.getElementById('arch-reason'); const reason=t?t.value.trim():'';
+  if(!reason){if(t)t.focus();return;}
+  closeDoc(); archiveSet(ref,true,reason);
+}
 async function exportJournal(scope){
   try{
     const r=await fetch('/api/accounting/export?scope='+(scope||'new'),{method:'POST'});

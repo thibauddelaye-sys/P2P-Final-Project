@@ -295,7 +295,7 @@ def grouped() -> dict:
         out.append({"po_reference": ref,
                     "supplier": next((d.get("supplier_name") for d in docs if d.get("supplier_name")), None),
                     "documents": docs, "present": sorted(t for t in types if t),
-                    "complete": complete, "archived": bool(docs) and all(d.get("set_archived") for d in docs), "match": three_way(docs) if complete else None})
+                    "complete": complete, "archived": bool(docs) and all(d.get("set_archived") for d in docs), "archive_reason": next((d.get("set_archive_reason") for d in docs if d.get("set_archive_reason")), None), "match": three_way(docs) if complete else None})
     orphans = []
     for d in loose:
         if d.get("doc_type") == "invoice":
@@ -845,7 +845,7 @@ def export_stock(scope="new"):
     fname = "stock_in_" + dt.datetime.utcnow().strftime("%Y%m%d_%H%M") + ".csv"
     return chr(65279) + buf.getvalue(), len(targets), fname
 
-def archive_set(ref, archived=True):
+def archive_set(ref, archived=True, reason=None):
     """Archive/unarchive a whole matched set (group) on the 3-way page. Independent of
     the accounting and goods-receipt archives — uses its own per-document flag."""
     n = _norm(ref)
@@ -854,7 +854,9 @@ def archive_set(ref, archived=True):
     hit = False
     for d in STORE.values():
         if _norm(d.get("po_reference")) == n:
-            d["set_archived"] = bool(archived); hit = True
+            d["set_archived"] = bool(archived)
+            d["set_archive_reason"] = ((reason or "").strip() or None) if archived else None
+            hit = True
     if hit:
         _save_state()
     return hit
