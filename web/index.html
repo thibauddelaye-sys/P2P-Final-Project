@@ -294,7 +294,7 @@ async function boot(){
 }
 
 /* ---------- DOCUMENTS ---------- */
-let DOCS={groups:[],loose:[],count:0}; const DOCMAP={};
+let DOCS={groups:[],loose:[],count:0}; const DOCMAP={}; let SUP_DISMISSED=new Set(); let CUR_SUP_SK=null;
 const TYPE_LABEL={purchase_order:'Bon de commande',delivery_note:'Bon de livraison',invoice:'Facture',unknown:'Document'};
 const TYPE_ORDER=['purchase_order','delivery_note','invoice'];
 const FLAG_LABEL={PRICE_VARIANCE:'price differs',OVERBILLED_QTY:'billed &gt; delivered',NOT_ON_PO:'not on the order',NOT_ON_DELIVERY:'not delivered'};
@@ -881,9 +881,57 @@ function renderIntake(){
       <td><span class="tag">${TYPE_BADGE[d.doc_type]||'Document'}</span></td>
       <td>${srcBadge(d.source)}</td>
       <td>${d.expense_type?'<span class="exp">'+d.expense_type+'</span>':'<span class="note">—</span>'}</td>
-      <td>${d.supplier_name||'—'}</td>
+      <td>${d.supplier_name||'—'}${newSupBtn(d)}</td>
       <td>${d.doc_date||'—'}</td>
       <td><span class="note">${fmtCap(d.captured_at)}</span></td><td class="intake-del"><button class="iconbtn del" title="Supprimer ce document" onclick="delDoc('${d.key}')">✕</button></td></tr>`).join(''):'';
+  maybePromptNewSupplier();
+}
+function normKey(s){return (s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+function escAttr(s){return (s==null?'':(''+s)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function supKeyOf(it){const pf=it.prefill||{};return (pf.vat||'').toUpperCase().replace(/[^A-Z0-9]/g,'')||normKey(pf.name)||it.key;}
+function newSupItem(nk){return (DOCS.new_suppliers||[]).find(x=>normKey((x.prefill||{}).name)===nk);}
+function newSupBtn(d){
+  if(d.doc_type!=='invoice')return '';
+  const it=newSupItem(normKey(d.supplier_name)); if(!it)return '';
+  return ` <button onclick="openSupplierByKey('${normKey(d.supplier_name)}')" style="padding:1px 8px;font-size:11px;border:1px solid #8C1C2B;color:#8C1C2B;background:#fff;border-radius:6px;cursor:pointer;vertical-align:middle;margin-left:6px">⊕ Create supplier</button>`;
+}
+function openSupplierByKey(nk){const it=newSupItem(nk); if(it)openSupplierModal(it.prefill, supKeyOf(it));}
+function maybePromptNewSupplier(){
+  const ap=$('.page.active'); if(!ap||ap.getAttribute('data-page')!=='0')return;
+  if($('#doc-modal').classList.contains('show'))return;
+  for(const it of (DOCS.new_suppliers||[])){const sk=supKeyOf(it); if(!SUP_DISMISSED.has(sk)){openSupplierModal(it.prefill, sk);return;}}
+}
+function dismissSupplier(sk){if(sk)SUP_DISMISSED.add(sk); closeDoc();}
+function openSupplierModal(pf, sk){
+  pf=pf||{}; CUR_SUP_SK=sk;
+  const fld=(lab,id,val,type)=>`<label style="display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:#7a7268;font-weight:600">${lab}<input id="${id}" type="${type||'text'}" value="${escAttr(val)}" style="padding:8px 11px;border:1px solid var(--rule,#ddd6ca);border-radius:8px;font-family:inherit;font-size:13.5px;color:var(--ink,#2b2b2b);font-weight:400"></label>`;
+  $('#doc-modal-body').classList.remove('wide');
+  $('#doc-modal-body').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <div class="eyebrow">New supplier detected · create</div>
+      <span onclick="dismissSupplier('${sk}')" style="cursor:pointer;font-size:18px;color:#b9b2a8;line-height:1">✕</span></div>
+    <h3 style="margin:4px 0 0">Create supplier</h3>
+    <div class="note" style="margin:6px 0 14px">This invoice is from a supplier not in your master yet. Review the pre-filled details and save — or add anything missing first.</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      ${fld('Name','sf-name',pf.name)}
+      <div style="display:flex;gap:10px">${fld('VAT number','sf-vat',pf.vat)}${fld('Payment terms (days)','sf-terms',(pf.terms_days!=null?pf.terms_days:''),'number')}</div>
+      ${fld('IBAN','sf-iban',pf.iban)}
+      ${fld('Address','sf-addr',pf.address)}
+      <div style="display:flex;gap:10px">${fld('Default account (optional)','sf-acct','')}<label style="display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:#7a7268;font-weight:600">Type<select id="sf-type" style="padding:8px 11px;border:1px solid var(--rule,#ddd6ca);border-radius:8px;font-family:inherit;font-size:13.5px;color:var(--ink,#2b2b2b);background:#fff;font-weight:400"><option value="goods" selected>goods (PO + delivery)</option><option value="overhead">overhead (direct)</option></select></label></div>
+    </div>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="dismissSupplier('${sk}')" style="padding:7px 14px;border:1px solid var(--rule,#ddd6ca);background:#fff;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;color:#6b6359">Cancel</button>
+      <button class="act mini" onclick="saveSupplier()">Save supplier</button>
+    </div>`;
+  $('#doc-modal').classList.add('show');
+}
+async function saveSupplier(){
+  const v=id=>{const e=$('#'+id);return e?e.value.trim():'';};
+  const body={name:v('sf-name'),vat:v('sf-vat'),iban:v('sf-iban'),address:v('sf-addr'),
+    terms_days:(v('sf-terms')?parseInt(v('sf-terms'),10):null),default_account:v('sf-acct'),
+    type:($('#sf-type')?$('#sf-type').value:'goods')};
+  try{const r=await fetch('/api/suppliers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});DOCS=await r.json();}catch(e){}
+  if(CUR_SUP_SK)SUP_DISMISSED.add(CUR_SUP_SK);
+  closeDoc(); renderAll();
 }
 function renderAll(){renderIntake();renderDocsPage();}
 

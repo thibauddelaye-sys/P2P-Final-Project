@@ -112,6 +112,16 @@ async def documents_upload(file: UploadFile = File(...)):
     docs.ingest_upload(file.filename, content, file.content_type or "")
     return docs.grouped()
 
+@app.post("/api/suppliers")
+async def suppliers_create(request: Request):
+    from . import documents as docs
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    docs.create_supplier(body if isinstance(body, dict) else {})
+    return docs.grouped()
+
 _PAGE_CACHE: dict = {}   # (key, n) -> rendered PNG bytes
 
 @app.post("/api/documents/archive-set")

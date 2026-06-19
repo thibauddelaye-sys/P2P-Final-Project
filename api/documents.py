@@ -125,13 +125,17 @@ DOC_PROMPT = (
     "You are an accounts-payable assistant. Classify this supplier document and extract its data. "
     "Return ONLY JSON, no prose, no markdown. Schema: "
     '{"doc_type": "purchase_order"|"delivery_note"|"invoice"|"unknown", '
-    '"doc_number": str, "po_reference": str, "supplier_name": str, "doc_date": str, '
+    '"doc_number": str, "po_reference": str, "supplier_name": str, '
+    '"supplier_vat": str, "supplier_iban": str, "supplier_address": str, "payment_terms_days": number|null, '
+    '"doc_date": str, '
     '"currency": str, "line_items": [{"description": str, "quantity": number, "unit_price": number|null}], '
     '"total_incl_vat": number|null}. '
     "Map French titles: 'BON DE COMMANDE' -> purchase_order, 'BON DE LIVRAISON' -> delivery_note, "
     "'FACTURE' -> invoice. po_reference is the purchase-order number the document relates to "
     "(for a purchase order, its own number; for a delivery note or invoice, the order it cites, "
     "often labelled 'Réf. commande' / 'Commande'). For a delivery note unit_price is usually null. "
+    "supplier_vat is the supplier's VAT/TVA number (e.g. 'TVA LU24681357' -> 'LU24681357'); supplier_iban its bank IBAN; "
+    "supplier_address its postal address; payment_terms_days the payment delay in days (e.g. '30 jours' -> 30). "
     "Use null if a field is absent. Do not invent values."
 )
 
@@ -306,7 +310,14 @@ def grouped() -> dict:
                             "po_reference": d.get("po_reference"), "filename": d.get("filename"),
                             "line_items": d.get("line_items"), "total_incl_vat": d.get("total_incl_vat"),
                             "has_file": d.get("has_file"), "source": d.get("source"), "captured_at": d.get("captured_at"), "orphan_doc": True})
-    return {"groups": out, "direct": direct, "loose": orphans, "count": len(STORE)}
+    new_sups, _seen = [], set()
+    for d in STORE.values():
+        if d.get("doc_type") == "invoice" and not supplier_known(d.get("supplier_name"), d.get("supplier_vat")):
+            sk = _vatkey(d.get("supplier_vat")) or _supkey(d.get("supplier_name"))
+            if not sk or sk in _seen: continue
+            _seen.add(sk)
+            new_sups.append({"key": d.get("key"), "doc_number": d.get("doc_number"), "prefill": supplier_prefill(d)})
+    return {"groups": out, "direct": direct, "loose": orphans, "count": len(STORE), "new_suppliers": new_sups}
 
 # ---- sample data (mirrors the 6 demo PDFs) so the page works without email/API ----
 def load_sample():
@@ -415,13 +426,77 @@ def _load_suppliers():
         return d.get("suppliers", []) if isinstance(d, dict) else (d or [])
     except Exception:
         return []
+def _vatkey(v):
+    return re.sub(r"[^A-Z0-9]", "", (v or "").upper())
+
+_CUSTOM_PATH = os.path.join(STORE_DIR, "suppliers_custom.json")
+def _load_custom_suppliers():
+    try:
+        with open(_CUSTOM_PATH, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, list) else d.get("suppliers", [])
+    except Exception:
+        return []
+def _save_custom_suppliers():
+    try:
+        os.makedirs(STORE_DIR, exist_ok=True)
+        with open(_CUSTOM_PATH, "w", encoding="utf-8") as f:
+            json.dump(CUSTOM_SUPPLIERS, f, ensure_ascii=False)
+    except Exception as e:
+        print("[suppliers] save failed:", e)
+
 SUPPLIERS = _load_suppliers()
-_SUP_BY_KEY = {_supkey(s.get("name")): s for s in SUPPLIERS if s.get("name")}
-def supplier_record(name):
+CUSTOM_SUPPLIERS = _load_custom_suppliers()
+_SUP_BY_KEY, _SUP_BY_VAT = {}, {}
+def _reindex_suppliers():
+    _SUP_BY_KEY.clear(); _SUP_BY_VAT.clear()
+    for s in SUPPLIERS + CUSTOM_SUPPLIERS:
+        if s.get("name"): _SUP_BY_KEY[_supkey(s.get("name"))] = s
+        if s.get("vat"):  _SUP_BY_VAT[_vatkey(s.get("vat"))] = s
+_reindex_suppliers()
+
+def supplier_record(name, vat=None):
+    """Look up a supplier by VAT number first (most reliable), then by name."""
+    if vat:
+        r = _SUP_BY_VAT.get(_vatkey(vat))
+        if r: return r
     return _SUP_BY_KEY.get(_supkey(name)) if name else None
 
+def supplier_known(name, vat=None):
+    return supplier_record(name, vat) is not None
+
+def supplier_prefill(doc):
+    """Pre-fill payload for the 'create supplier' modal, from an extracted document."""
+    return {"name": doc.get("supplier_name") or "", "vat": doc.get("supplier_vat") or "",
+            "iban": doc.get("supplier_iban") or "", "address": doc.get("supplier_address") or "",
+            "terms_days": doc.get("payment_terms_days")}
+
+def create_supplier(data: dict) -> dict:
+    """Add a user-created supplier to the master (persisted on the volume) and index it."""
+    terms = data.get("terms_days")
+    try: terms = int(terms) if str(terms).strip() not in ("", "None") else None
+    except Exception: terms = None
+    rec = {"name": (data.get("name") or "").strip(),
+           "email": (data.get("email") or "").strip() or None,
+           "type": data.get("type") if data.get("type") in ("goods", "overhead") else "goods",
+           "vat": (data.get("vat") or "").strip() or None,
+           "iban": (data.get("iban") or "").strip() or None,
+           "address": (data.get("address") or "").strip() or None,
+           "terms_days": terms,
+           "default_account": (data.get("default_account") or "").strip() or None,
+           "tiers": None, "pos": None,
+           "created_via_tool": True, "created_at": dt.datetime.utcnow().isoformat(timespec="seconds"),
+           "exp_acct": False, "exp_stock": False}
+    nk, vk = _supkey(rec["name"]), _vatkey(rec["vat"])
+    global CUSTOM_SUPPLIERS
+    CUSTOM_SUPPLIERS = [s for s in CUSTOM_SUPPLIERS
+                       if _supkey(s.get("name")) != nk and (not vk or _vatkey(s.get("vat")) != vk)]
+    CUSTOM_SUPPLIERS.append(rec)
+    _save_custom_suppliers(); _reindex_suppliers()
+    return rec
+
 def classify_invoice(doc):
-    rec = supplier_record(doc.get("supplier_name"))
+    rec = supplier_record(doc.get("supplier_name"), doc.get("supplier_vat"))
     if rec and rec.get("type") in ("goods", "overhead"):
         flow = rec["type"]
         return {"flow": flow, "requires_po": flow == "goods", "basis": "supplier"}
@@ -567,6 +642,15 @@ def export_journal(scope="new"):
                and not (scope == "new" and d.get("exported"))]
     targets.sort(key=lambda d: (d.get("doc_date") or "", d.get("doc_number") or ""))
     buf = _io.StringIO(); w = _csv.writer(buf, delimiter=";")
+    sup_targets = [x for x in CUSTOM_SUPPLIERS if not (scope == "new" and x.get("exp_acct"))]
+    if sup_targets:
+        w.writerow(["NOUVEAUX FOURNISSEURS (à créer dans le logiciel comptable)"])
+        w.writerow(["Nom", "N° TVA", "IBAN", "Adresse", "Délai (jours)", "Compte par défaut", "Type"])
+        for x in sup_targets:
+            w.writerow([x.get("name") or "", x.get("vat") or "", x.get("iban") or "", x.get("address") or "",
+                        (x.get("terms_days") if x.get("terms_days") is not None else ""), x.get("default_account") or "", x.get("type") or ""])
+            x["exp_acct"] = True
+        w.writerow([]); _save_custom_suppliers()
     w.writerow(["Journal", "Date", "Compte", "Libell\u00e9", "R\u00e9f\u00e9rence tiers", "D\u00e9bit", "Cr\u00e9dit",
                 "Base HTVA", "Montant TVA", "INVEST/EXPLOITATION", "POINT DE VENTE", "SERVICES", "Pi\u00e8ce"])
     def n(x): return ("%0.2f" % x).replace(".", ",") if isinstance(x, (int, float)) else ""
@@ -586,7 +670,7 @@ def export_journal(scope="new"):
         d["exported_at"] = dt.datetime.utcnow().isoformat(timespec="seconds")
     if targets: _save_state()
     fname = "journal_ACH_" + dt.datetime.utcnow().strftime("%Y%m%d_%H%M") + ".csv"
-    return "\ufeff" + buf.getvalue(), len(targets), fname
+    return "\ufeff" + buf.getvalue(), len(targets) + len(sup_targets), fname
 
 def _acct_options():
     accs = sorted(({"account": a, "label": v.get("label", a), "pos": v.get("pos"),
@@ -824,6 +908,15 @@ def export_stock(scope="new"):
                and not (scope == "new" and d.get("stock_exported"))]
     targets.sort(key=lambda d: (d.get("doc_date") or "", d.get("doc_number") or ""))
     buf = _io.StringIO(); w = _csv.writer(buf, delimiter=";")
+    sup_targets = [x for x in CUSTOM_SUPPLIERS if not (scope == "new" and x.get("exp_stock"))]
+    if sup_targets:
+        w.writerow(["NOUVEAUX FOURNISSEURS (à créer dans le logiciel de stocks)"])
+        w.writerow(["Nom", "N° TVA", "IBAN", "Adresse", "Délai (jours)", "Type"])
+        for x in sup_targets:
+            w.writerow([x.get("name") or "", x.get("vat") or "", x.get("iban") or "", x.get("address") or "",
+                        (x.get("terms_days") if x.get("terms_days") is not None else ""), x.get("type") or ""])
+            x["exp_stock"] = True
+        w.writerow([]); _save_custom_suppliers()
     w.writerow(["Date r\u00e9ception", "R\u00e9f\u00e9rence BL", "Commande", "Fournisseur", "D\u00e9signation",
                 "Quantit\u00e9 BL", "Quantit\u00e9 re\u00e7ue", "\u00c9cart", "Statut", "Re\u00e7u par"])
     def g(x): return ("%g" % x) if isinstance(x, (int, float)) else ""
@@ -843,7 +936,7 @@ def export_stock(scope="new"):
         d["stock_exported_at"] = dt.datetime.utcnow().isoformat(timespec="seconds")
     if targets: _save_state()
     fname = "stock_in_" + dt.datetime.utcnow().strftime("%Y%m%d_%H%M") + ".csv"
-    return chr(65279) + buf.getvalue(), len(targets), fname
+    return chr(65279) + buf.getvalue(), len(targets) + len(sup_targets), fname
 
 def archive_set(ref, archived=True, reason=None):
     """Archive/unarchive a whole matched set (group) on the 3-way page. Independent of
