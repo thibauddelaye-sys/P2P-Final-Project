@@ -70,7 +70,7 @@ This mirrors the cost model and keeps pricing **anchored to delivered savings** 
 
 | Stakeholder group | What they need to know | Who communicates | When |
 |---|---|---|---|
-| **Owner / CEO (Cleo)** | The case, the cost, the falsifiable gate, the margin + retention upside | Project lead / consultant | Kickoff; gate decision; quarterly |
+| **Owner / CEO** | The case, the cost, the falsifiable gate, the margin + retention upside | Project lead / consultant | Kickoff; gate decision; quarterly |
 | **CFO / Finance Director** | Process changes, controls, the close impact, compliance posture | Project lead + finance owner | Weekly during pilot |
 | **AP clerk / cost controller (users)** | "Second set of eyes", no headcount cuts, how to review/correct, that they stay accountable | Trainer / change lead | Training (Phase 0/1); ongoing |
 | **General Manager** | That service-facing staff are unaffected; team time is freed, not cut | Project lead | Kickoff; rollout |
