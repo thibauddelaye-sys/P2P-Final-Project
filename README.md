@@ -1,57 +1,85 @@
-# Final Project — Maison Lumière "P2P"
-### AI-Assisted Accounts-Payable & Inventory Automation for Luxury Hospitality
+# Maison Lumière — "P2P" · AI-Assisted AP & Inventory Tool + Final Project deliverables
 *Ironhack — AI Consulting & Integration · Thibaud Delaye*
 
-A working AI tool that reads supplier invoices, proposes accounting entries, runs a 3-way match, controls goods receipt and drafts supplier dispute e-mails for an independent 5★ hotel — **AI reads, humans decide.** This repository holds the **deliverables**; the application source lives in a separate repo (linked below).
+This repository is **both**:
+1. the **working AI application** (source at the repository root, deployed and live), and
+2. the **Ironhack Final Project deliverables** (the documents listed below).
+
+> **Demo system: synthetic data, real logic, real AI.** No real company or personal data is committed or sent to any API. **AI reads, humans decide** — nothing is posted, paid or sent without a person approving it.
+
+- **Live cockpit:** https://p2p-inventory-production.up.railway.app
 
 ---
 
-## 📁 File map
+## 📁 Repository map
 
+**Final Project deliverables**
 ```
-final-project-thibaud-delaye/
-├── README.md                         ← this file map
-├── use_case_definition.md            #1 — business problem, profile, solution, stakeholders, success criteria, scope
-├── poc/
-│   ├── poc_documentation.md          #2 — the (code-based) proof of concept: tools, steps, AI capability, limits, how to run
-│   └── poc_screenshots/              #2 — [ADD: annotated screenshots of each page]
-├── roi_risk_assessment.md            #3 — costs, business value, ROI (12 & 36 mo), assumptions, break-even, 9-risk matrix
-├── compliance/
-│   ├── eu_ai_act_compliance.md       #4 — classification (limited risk/transparency), reasoning, obligations, conformity summary, tech-doc outline
-│   └── gdpr_documentation.md         #5 — data flow map, processing register, DPIA, data-subject rights, third-party transfers
-├── strategic_plan.md                 #6 — deployment phases, timeline, go-to-market, stakeholder comms, KPIs, commercialisation
-├── presentation.pdf / .pptx          #7 — [TO BUILD: slide deck for Week 9 Day 5]
-└── mvp/                              #8 (stretch)
-    ├── README.md                     working-MVP overview (also usable to refresh the application repo's README)
-    └── mvp_documentation.md          architecture, setup, run, error handling, limitations, how it extends the POC
+use_case_definition.md            #1 — problem, profile, solution, stakeholders, success criteria, scope
+poc/poc_documentation.md          #2 — the (code-based) proof of concept: tools, steps, AI capability, limits, run
+poc/poc_screenshots/              #2 — [ADD: annotated screenshots]
+roi_risk_assessment.md            #3 — costs, ROI (12 & 36 mo), assumptions, break-even, 9-risk matrix
+roi_risk_assessment.xlsx          #3 — same model as a live spreadsheet (formulas, risk matrix)
+compliance/eu_ai_act_compliance.md  #4 — classification (limited risk/transparency), conformity summary, tech-doc outline
+compliance/gdpr_documentation.md    #5 — data flow, processing register, DPIA, data-subject rights, transfers (+ EU-residency options)
+strategic_plan.md                 #6 — deployment phases, timeline, go-to-market, KPIs, commercialisation
+presentation.pdf / .pptx          #7 — slide deck, pf-05 structure (PDF preferred); demo + business case + compliance
+mvp_documentation.md              #8 (stretch) — architecture, setup, run, limitations, how it extends the POC
 ```
 
-**Application source (the working MVP / POC):** https://github.com/thibauddelaye-sys/P2P-Final-Project
-**Live demo:** https://p2p-inventory-production.up.railway.app
+**Working application (the MVP / POC source)**
+```
+api/main.py          FastAPI: extraction · 3-way match · accounting · goods receipt · e-mail · exports; serves the UI
+api/documents.py     document store, LLM extraction, grouping/dedup, GL imputation, dispute PDF, Resend/SMTP send
+api/email_intake.py  IMAP fetch of unread invoice attachments (standard library only)
+web/index.html       the cockpit (Reception · 3-Way Match · Goods Receipt · Accounting)
+data/                suppliers.json (11 fictional) · gl_lookups.json (generic/pseudonymised) · account_keywords.json
+build_gl_lookups.py  builds gl_lookups.local.json from a real GL (local only; git-ignored)
+requirements.txt · Procfile · .env.example
+```
+
+---
+
+## What the app does
+
+Four cockpit pages, one per step of the AP workflow:
+
+- **Reception** — capture a document (drop a PDF/JPG/PNG, or pull new ones from the mailbox via *Check inbox*). An LLM reads it and proposes the accounting entry; documents are de-duplicated and grouped by PO reference.
+- **3-Way Match** — every invoice line checked against ordered vs received; flags overbilling, price variance, short delivery; quantifies the € caught before payment.
+- **Goods Receipt** — record what physically arrived vs the delivery note; surface discrepancies; attach an evidence photo; draft + send a bilingual dispute e-mail (PDF constat + photo).
+- **Accounting** — review/edit the proposed double-entry journal line by line (account · VAT · analytical), then export a balanced, GL-ready CSV journal (ACH format).
+
+## Run locally
+
+```bash
+pip install -r requirements.txt
+export ANTHROPIC_API_KEY=sk-ant-...        # required for AI invoice reading
+# optional: IMAP_USER / IMAP_PASSWORD (Google app password) for e-mail capture
+# optional: RESEND_API_KEY / RESEND_FROM for sending dispute e-mails
+uvicorn api.main:app --reload --port 8100
+# open http://localhost:8100
+```
+
+## Deploy (Railway — one service)
+
+New service from this repo (the `Procfile` handles startup); set `ANTHROPIC_API_KEY`; set `STORE_DIR=/store` and attach a Railway **volume** at `/store` so captured documents persist. The cockpit is served at `/`.
+
+## Data governance
+
+Only **synthetic** suppliers and **generic/pseudonymised** GL labels are committed. A real chart of accounts, if used, lives in `data/gl_lookups.local.json`, which is **git-ignored** and used preferentially. Secrets live in environment variables (`.env` is git-ignored). See `compliance/` for the EU AI Act and GDPR assessments.
 
 ---
 
 ## ✅ Submission checklist
 
-**Core**
 - [x] `use_case_definition.md`
 - [x] `poc/poc_documentation.md` — _add demo-recording link + screenshots_
-- [x] `roi_risk_assessment.md`
-- [x] `compliance/eu_ai_act_compliance.md`
-- [x] `compliance/gdpr_documentation.md`
+- [x] `roi_risk_assessment.md` + `roi_risk_assessment.xlsx`
+- [x] `compliance/eu_ai_act_compliance.md` · `compliance/gdpr_documentation.md`
 - [x] `strategic_plan.md`
-- [ ] `presentation.[pdf/pptx]` — **to build** (deck synthesising the above)
+- [x] `presentation.pdf` (+ `presentation.pptx`)
+- [x] `mvp_documentation.md` + working MVP (this repo)
 
-**Stretch**
-- [x] `mvp/mvp_documentation.md` + `mvp/README.md`
-- [x] GitHub repository link → the application repo above (organised code, `requirements.txt`, `.env.example`, commit history)
+**To add by hand:** demo-recording link (in `poc/poc_documentation.md`) · screenshots (`poc/poc_screenshots/`).
 
-**Still to add by hand**
-1. **Demo recording (2–5 min)** — paste the link into `poc/poc_documentation.md`.
-2. **POC screenshots** — drop annotated images into `poc/poc_screenshots/`.
-3. **Presentation deck** — `presentation.pptx` (next deliverable).
-4. *(Optional)* refresh the application repo's `README.md` using `mvp/README.md` (the current one still mentions removed Stock/Scan pages).
-
----
-
-> All operational KPIs are a **modelled pilot projection**; market-evidence figures are **real and cited** (mostly directional vendor/US benchmarks, flagged as such). Demo runs on **synthetic data** — no real company or personal data. Compliance documents are first-pass assessments, **not legal opinions**.
+> Operational KPIs are a **modelled pilot projection**; market figures are **real and cited** (directional vendor/US benchmarks, flagged). Compliance documents are first-pass assessments, **not legal opinions**.

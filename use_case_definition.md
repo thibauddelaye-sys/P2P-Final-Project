@@ -22,7 +22,7 @@ Sitting on top of that lean team is a large, quiet, manual cost: **accounts-paya
 
 | Attribute | Value |
 |---|---|
-| **Fictional client** | **Maison Lumière** — an independent five-star hotel; the **owner/CEO** is evidence-driven ("anti-hype, not anti-AI") |
+| **Fictional client** | **Maison Lumière** — an independent five-star hotel (CEO/owner persona: *Cleo*, evidence-driven, "anti-hype, not anti-AI") |
 | **Industry** | Luxury hospitality — independent & small-group 5★ hotels |
 | **Company size** | **SME** — single property to small group, ~80–250 employees |
 | **Geography / context** | Luxembourg / EU (EU data-protection and AI-Act regime applies) |
@@ -54,7 +54,7 @@ Large chains centralise finance in shared-service centres; independents and smal
 
 | Stakeholder | Role re: the system | Need / pain today |
 |---|---|---|
-| **CEO / Owner** | **Decides** (sponsors the investment) | Protect margin without damaging service; will not "burn budget on hype" — needs evidence |
+| **CEO / Owner (Cleo)** | **Decides** (sponsors the investment) | Protect margin without damaging service; will not "burn budget on hype" — needs evidence |
 | **CFO / Finance Director** | **Decides / owns** the process | Slow, firefighting month-end close; limited headcount, can't simply hire |
 | **Accountant / AP clerk** | **Primary user** | Manual, repetitive, error-prone invoice keying; volume spikes overwhelm a small team |
 | **Cost controller** | **User** | Reconciling cost invoices (F&B, consumables) against deliveries is manual and lagging |

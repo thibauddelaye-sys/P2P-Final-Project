@@ -40,15 +40,19 @@ The two areas worth checking (4 and 5) are explicitly **not** triggered because 
 
 ---
 
-## 3. Mandatory requirements summary (Limited risk → Article 50 transparency)
+## 3. Mandatory requirements summary
 
-| Obligation | What Article 50 requires | How our design addresses it |
+At **limited risk**, the only *strictly mandatory* obligation is **transparency (Article 50)**. The guide's five requirement areas are nonetheless addressed below — showing how the design handles each is stronger than citing the label, and it pre-positions the system if scope ever expands toward high-risk. **Transparency is the binding pillar; the other four are best-practice at this risk level.**
+
+| Requirement area | Status here | How the design addresses it |
 |---|---|---|
-| **Disclosure of AI-generated content** | Recipients/affected persons should be able to know content is AI-generated/assisted | Add a standing line to AI-drafted supplier e-mails: *"prepared with AI assistance and reviewed by a member of the Maison Lumière finance team."* Internal "AI reads, humans decide" framing is visible in the cockpit. |
-| **Disclosure to staff (interacting with the AI)** | Users should know they are working with an AI system | A short internal notice describes what the AI does, its known failure modes, and the rule that humans verify every entry. |
-| **Clear, accessible disclosure** | Information given in a clear and distinguishable manner, at the latest at first interaction | The e-mail footer and the staff notice are plain-language and always present. |
+| **Transparency & information** (Art. 50 — *mandatory*) | **Required & met** | Standing line on AI-drafted supplier e-mails (*"prepared with AI assistance and reviewed by the Maison Lumière finance team"*); an internal staff notice explaining what the AI does, its failure modes, and the rule that humans verify; disclosures are plain-language and always present. |
+| **Human oversight** | Best-practice, **core to the design** | Mandatory, non-skippable human review of every proposed entry and every e-mail; line-by-line editable proposals; confidence-threshold routing of low-confidence items to review; **no autonomous posting, payment or sending** (a hard boundary). |
+| **Data & data governance** | Addressed | Synthetic/pseudonymised data in the demo; no full ledger ingested; GL/account lookups derived from the hotel's own chart of accounts; real data git-ignored and never committed; input quality controlled by the human-review step. Full treatment in `gdpr_documentation.md`. |
+| **Accuracy & robustness** | Addressed | LLM extraction validated on a multi-template + degraded-scan test set; JSON-repair fallback; exception routing + manual fallback on poor scans; model swappable (Haiku → Sonnet) for tough documents; accuracy-drift monitoring planned for production; the pilot backtests accuracy on real invoices before scaling. |
+| **Cybersecurity** | Addressed | Secrets in environment variables, never committed (`.env` git-ignored); HTTPS transport; data minimisation (only what extraction needs leaves the app); authentication + role-based access is a documented production requirement. |
 
-Because the system is **not** high-risk, the heavy provider obligations (risk-management system, data governance file, conformity assessment, CE marking, registration, post-market monitoring under Art. 9–15, 43, 47–49, 72) **do not apply**. The substantive obligations for this system live under **data-protection law** (see `gdpr_documentation.md`).
+Because the system is **not** high-risk, the heavy provider obligations (risk-management system, conformity assessment, CE marking, registration, post-market monitoring under Art. 9–15, 43, 47–49, 72) **do not apply** as legal requirements. The substantive *binding* obligations for this system live under **data-protection law** (see `gdpr_documentation.md`); the table above shows the AI-Act requirement areas are addressed regardless.
 
 ---
 

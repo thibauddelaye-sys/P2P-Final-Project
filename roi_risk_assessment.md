@@ -61,14 +61,14 @@
 | Horizon | Total cost | Gross saving | Net benefit | **ROI** |
 |---|---|---|---|---|
 | **12 months** (pilot €20k + rollout €8k + run €13k ≈ €41k) | ≈ €41,000 | ≈ €42,000 | ≈ **+€1,000** | **≈ +2% (≈ breakeven)** |
-| **36 months** (Y1 €41k + Y2 €12.9k + Y3 €12.9k ≈ €66.2k) | ≈ €66,200 | ≈ €126,000 | ≈ **+€59,800** | **≈ +90%** |
+| **36 months** (Y1 €41k + Y2 €13k + Y3 €13k = €67k) | ≈ €67,000 | ≈ €126,000 | ≈ **+€59,000** | **≈ +88%** |
 
 **Expanded full-tool case** (illustrative, once Phase 2/3 land — same cost base, net €93.5k/yr):
 
 | Horizon | Total cost | Net benefit (cum.) | **ROI** |
 |---|---|---|---|
 | 12 months | ≈ €41,000 | ≈ €93,500 − ramp | strongly positive |
-| 36 months | ≈ €66,200 | ≈ €265,500 (3 × €93.5k − pilot) | **≈ 300%+** |
+| 36 months | ≈ €67,000 | ≈ €252,500 (3 × €93.5k − €28k upfront) | **≈ 300%+** |
 
 > The committed AP-only figures are deliberately the ones we stand behind for the go/no-go decision; the full-tool case is the expansion upside, not the promise.
 
